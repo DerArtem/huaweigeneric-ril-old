@@ -70,7 +70,7 @@ int encode_digit(int d) {
 }		
 
 int encode_number(char *msg, char *no) {
-	int i;
+	unsigned int i;
 	int digit;
 	
 	setbits(msg, 0, 2, 0);
@@ -86,35 +86,39 @@ void get_code_and_length(char *msg, int *code, int *length) {
 }
 
 void decode_bearer_data(char *msg, int length, char *message) {
-	int i=0,j;
-	int code,sublength;
+    int i=0,j;
+    int code,sublength;
 
-	while(i<length) {
-		get_code_and_length(msg+i*2,&code,&sublength);
-		if(code==1) {
-			int encoding=getbits(msg+i*2+4,0,5);
-			int nchars=getbits(msg+i*2+4,5,8);
-				if(encoding==2 || encoding==3) {
-					for(j=0;j<nchars;j++)
-						*message++=getbits(msg+i*2+4,13+7*j,7);
-				} else 
-				if(encoding==8) {
+    while(i<length) {
+        get_code_and_length(msg+i*2,&code,&sublength);
+        if(code==1) {
+            int encoding=getbits(msg+i*2+4,0,5);
+            int nchars=getbits(msg+i*2+4,5,8);
+                if(encoding==2 || encoding==3) {
+                    for(j=0;j<nchars;j++)
+                        *message++=getbits(msg+i*2+4,13+7*j,7);
+                } else 
+                if(encoding==8) {
                for(j=0;j<nchars;j++)
                   *message++=getbits(msg+i*2+4,13+8*j,8);
             } else {
-					strcpy(message,"bad SMS encoding");
-					message+=16;
-				}
-			*message=0;
-		}
-		i+=sublength+2;
-	}
-	
+                    strcpy(message,"bad SMS encoding");
+                    message+=16;
+                }
+            *message=0;
+        } else if (code == 11 && sublength == 1) {
+            int msgs = hex2int(msg[i*2+4])+16*hex2int(msg[i*2+5]);
+            message += snprintf(message, 7, "MSGS:%c", msgs ? '1' : '0');
+        }
+        i+=sublength+2;
+    }
+    
 }
 
 int encode_bearer_data(char *msg, char *data) {
 	int msgid=0;
-	int i,b;
+	unsigned int i;
+        int b;
 	char *start=msg;
 	
 	for(i=0;i<strlen(data);i++)
@@ -142,18 +146,18 @@ int encode_bearer_data(char *msg, char *data) {
 }
 
 void decode_cdma_sms(char *pdu, char *from, char *message) {
-	int i=1;
-	int code,length;
-	strcpy(from,"000000"); // in case something fails
-	strcpy(message,"UNKNOWN"); 
-	while(i<strlen(pdu)) {
-		get_code_and_length(pdu+i*2,&code,&length);
-		if(code==2) // from
-			decode_number(pdu+i*2+4,length,from);
-		if(code==8) // bearer_data
-			decode_bearer_data(pdu+i*2+4,length,message);
-		i+=length+2;
-	}
+    unsigned int i=1;
+    int code,length;
+    strcpy(from,"000000"); // in case something fails
+    strcpy(message,"UNKNOWN"); 
+    while(i*2<strlen(pdu)) {
+        get_code_and_length(pdu+i*2,&code,&length);
+        if(code==2) // from
+            decode_number(pdu+i*2+4,length,from);
+        if(code==8) // bearer_data
+            decode_bearer_data(pdu+i*2+4,length,message);
+        i+=length+2;
+    }
 }
 
 void encode_cdma_sms(char *pdu, char *to, char *message) {
@@ -186,25 +190,42 @@ char **cdma_to_gsmpdu(char *msg) {
 	static char hexpdu[1024];
 	static char *hexpdus[16];
 	int i=0;
+        int is_vm=0;
 	decode_cdma_sms(msg,from,message);
 //	if(strlen(message)>=160) message[159]=0;
 	LOGD("CDMA Message:%s From:%s\n",message,from);
 	SmsAddressRec smsaddr;
 	SmsTimeStampRec smstime;
+        if (!strcmp(from, "000000") && !strncmp(message, "MSGS:", 5)) {
+            /* voicemail notifications must have a 4 byte address */
+            if (message[5] == '1') {
+                /* set message waiting indicator */
+                strcpy(from, "1100");
+            } else {
+                /* clear message waiting indicator */
+                strcpy(from, "0100");
+            }
+            strcpy(message, " ");
+            is_vm = 1;
+        }
 	sms_address_from_str(&smsaddr,from,strlen(from));
+        if (is_vm) {
+            /* voicemail notifications have a clear bottom nibble in toa
+             * and an alphanumeric address type */
+            smsaddr.toa = 0xd0;
+        }
 	sms_timestamp_now(&smstime);
 	SmsPDU *pdu=smspdu_create_deliver_utf8((const unsigned char *)message,strlen(message),&smsaddr,&smstime);
 	//hexpdu=malloc(512);
 	char *s=hexpdu;
-	if(strcmp(from,"000000")) // if not voice mail notification
-		while(*pdu) {
-			smspdu_to_hex(*pdu, s,512);
-			hexpdus[i]=s;
-			s=s+strlen(s)+2;
-			smspdu_free(*pdu);
-			i++;
-			pdu++;
-		}
+        while(*pdu) {
+                smspdu_to_hex(*pdu, s,512);
+                hexpdus[i]=s;
+                s=s+strlen(s)+2;
+                smspdu_free(*pdu);
+                i++;
+                pdu++;
+        }
 	hexpdus[i]=0;
 	return hexpdus;
 }
