@@ -124,6 +124,23 @@ static void pollSIMState (void *param);
 static void setRadioState(RIL_RadioState newState);
 
 static int isgsm=0;
+static char *callwaiting_num;
+
+static void handle_cdma_ccwa (const char *s)
+{
+    int err;
+    char *line = strdup(s);
+
+    err = at_tok_start(&line);
+    if (err)
+        return;
+    err = at_tok_nextstr(&line, &callwaiting_num);
+    if (err)
+        return;
+    callwaiting_num = strdup(callwaiting_num);
+    free(line);
+    LOGE("successfully set callwaiting_numn");
+}
 
 extern char** cdma_to_gsmpdu(char *);
 extern char* gsm_to_cdmapdu(char *);
@@ -500,6 +517,7 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
     RIL_Call **pp_calls;
     int i;
     int needRepoll = 0;
+    char *l_callwaiting_num=NULL;
 
 #ifdef WORKAROUND_ERRONEOUS_ANSWER
     int prevIncomingOrWaitingLine;
@@ -520,6 +538,13 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
             ; p_cur != NULL
             ; p_cur = p_cur->p_next
     ) {
+        countCalls++;
+    }
+
+    if (callwaiting_num) {
+        /* This is not thread-safe.  Boo. */
+        l_callwaiting_num = callwaiting_num;
+        callwaiting_num = NULL;
         countCalls++;
     }
 
@@ -559,6 +584,18 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
         }
 
         countValidCalls++;
+    }
+
+    if (l_callwaiting_num) {
+        char fake_clcc[64];
+        snprintf(fake_clcc, 64, "+CLCC: %d,0,5,0,0,\"%s\",129",
+                 p_calls[countValidCalls-1].index+1,
+                 l_callwaiting_num);
+        free(l_callwaiting_num);
+        err = callFromCLCCLine(fake_clcc, p_calls + countValidCalls);
+        if (err == 0) {
+            countValidCalls++;
+        }
     }
 
 #ifdef WORKAROUND_ERRONEOUS_ANSWER
@@ -850,7 +887,7 @@ static void requestRegistrationState(int request, void *data,
 						if (*p_op == ',') commas_op++;
 					}
 					
-					if (commas_op = 3) {
+					if (commas_op == 3) {
 						count = 4;
 			            err = at_tok_start(&line_op);
 			            err = at_tok_nextint(&line_op, &skip);
@@ -1014,7 +1051,7 @@ static void requestOperator(void *data, size_t datalen, RIL_Token t)
 		if (i < 3) {
 		    goto error;
 		}
-		if (i = 3) {
+		if (i == 3) {
 			response[3] = '\0';
 		}
 	}
@@ -2059,6 +2096,10 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
                 || strStartsWith(s,"NO CARRIER")
                 || strStartsWith(s,"+CCWA")
     ) {
+        if (strStartsWith(s,"+CCWA") && !isgsm) {
+            /* Handle CCWA specially */
+            handle_cdma_ccwa(s);
+        }
         RIL_onUnsolicitedResponse (
             RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED,
             NULL, 0);
