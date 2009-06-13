@@ -588,9 +588,22 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 
     if (l_callwaiting_num) {
         char fake_clcc[64];
+        int index = p_calls[countValidCalls-1].index+1;
+
+        /* Try not to use an index greater than 9 */
+        if (index > 9) {
+            int i;
+
+            for (i=countValidCalls-2; i >= 0; i++) {
+                if (p_calls[i].index < 9) {
+                    index = p_calls[i].index+1;
+                    break;
+                }
+            }
+        }
+
         snprintf(fake_clcc, 64, "+CLCC: %d,0,5,0,0,\"%s\",129",
-                 p_calls[countValidCalls-1].index+1,
-                 l_callwaiting_num);
+                 index, l_callwaiting_num);
         free(l_callwaiting_num);
         err = callFromCLCCLine(fake_clcc, p_calls + countValidCalls);
         if (err == 0) {
