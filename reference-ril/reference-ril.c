@@ -1445,7 +1445,8 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             // 3GPP 22.030 6.5.5
             // "Releases all held calls or sets User Determined User Busy
             //  (UDUB) for a waiting call."
-            at_send_command("AT+CHLD=0", NULL);
+            if (isgsm)
+                at_send_command("AT+CHLD=0", NULL);
             /* success or failure is ignored by the upper layer here.
                it will call GET_CURRENT_CALLS and determine success that way */
             RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
@@ -1469,7 +1470,10 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             // 3GPP 22.030 6.5.5
             // "Places all active calls (if any exist) on hold and accepts
             //  the other (held or waiting) call."
-            at_send_command("AT+CHLD=2", NULL);
+            if (isgsm)
+                at_send_command("AT+CHLD=2", NULL);
+            else
+                at_send_command("AT+HTC_SENDFLASH", NULL);
 
 #ifdef WORKAROUND_ERRONEOUS_ANSWER
             s_expectAnswer = 1;
