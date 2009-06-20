@@ -129,12 +129,14 @@ static char *callwaiting_num;
 static void handle_cdma_ccwa (const char *s)
 {
     int err;
-    char *line = strdup(s);
+    char *line, *tmp;
 
-    err = at_tok_start(&line);
+    LOGE("in handle_cdma_ccwa");
+    line = tmp = strdup(s);
+    err = at_tok_start(&tmp);
     if (err)
         return;
-    err = at_tok_nextstr(&line, &callwaiting_num);
+    err = at_tok_nextstr(&tmp, &callwaiting_num);
     if (err)
         return;
     callwaiting_num = strdup(callwaiting_num);
