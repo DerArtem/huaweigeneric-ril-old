@@ -2075,7 +2075,7 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
         return;
     }
 
-    if (strStartsWith(s, "%CTZV:")) {
+    if (strStartsWith(s, "%CTZV:") || strStartsWith(s, "+HTCCTZVL")) {
         /* TI specific -- NITZ time */
         char *response;
 
