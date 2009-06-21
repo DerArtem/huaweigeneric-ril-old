@@ -41,8 +41,7 @@
 #define MAX_AT_RESPONSE 0x1000
 
 /* pathname returned from RIL_REQUEST_SETUP_DEFAULT_PDP */
-#define PPP_TTY_PATH "/dev/omap/ttys0"
-#define PPP_TTY_PATH_K "/dev/smd1"
+#define PPP_TTY_PATH "ppp0"
 
 #ifdef USE_TI_COMMANDS
 
@@ -1146,10 +1145,10 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
     int err;
     ATResponse *p_response = NULL;
     char *response[2] = { "1", PPP_TTY_PATH };
-		char *response_k[2] = { "1", PPP_TTY_PATH_K };
 
     apn = ((const char **)data)[0];
 
+  if (isgsm) {
 #ifdef USE_TI_COMMANDS
     // Config for multislot class 10 (probably default anyway eh?)
     err = at_send_command("AT%CPRIM=\"GMM\",\"CONFIG MULTISLOT_CLASS=<10>\"",
@@ -1221,7 +1220,6 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 
 	} else {
 		/*
-		if(isgsm) {
         asprintf(&cmd, "AT+CGDCONT=1,\"IP\",\"%s\",,0,0", apn);
 	    //FIXME check for error here
 	    err = at_send_command(cmd, NULL);
@@ -1250,9 +1248,11 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 			return;
 //		err = at_send_command("ATH", NULL);
 //		err = at_send_command("ATDT#777", NULL);
-		}
 		*/
 	}
+  } else {
+	// CDMA...
+  }
   RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	at_response_free(p_response);
 
@@ -1999,11 +1999,44 @@ static void initializeCallback(void *param)
     /* note: we don't check errors here. Everything important will
        be handled in onATTimeout and onATReaderClosed */
 
+  if(!isgsm) {
+    /*  atchannel is tolerant of echo but it must */
+    /*  have verbose result codes */
+        at_send_command("ATV1", NULL);
+    /*  echo off */
+        at_send_command("ATE0", NULL);
+    /*  No auto-answer */
+        at_send_command("ATS0=0", NULL);
+    /*  send results */
+        at_send_command("ATQ0", NULL);
+    /*  check for busy, don't check for dialone */
+        at_send_command("ATX3", NULL);
+    /*  set DCD depending on service */
+        at_send_command("AT&C1", NULL);
+    /*  set DTR according to service */
+        at_send_command("AT&D1", NULL);
+    /*  Extended errors, detailed rings, unknown, modulate data, no mute */
+        at_send_command("AT+CMEE=1;+CRC=1;+CR=1;+CMOD=0;+CMUT=0", NULL);
+        at_send_command("AT", NULL);
+    /*  bring up the device, also resets the stack */
+        at_send_command("AT+CFUN=1", NULL);
+    /*  Not muted */
+        at_send_command("AT+CMUT=0", NULL);
+    /*  caller id = yes */
+        at_send_command("AT+CLIP=1", NULL);
+    /*  don't hide outgoing callerID */
+        at_send_command("AT+CLIR=0", NULL);
+        at_send_command("AT", NULL);
+        at_send_command("AT+COPS=0", NULL);
+//      at_send_command("AT+HTC_GPSONE=4", NULL);
+        at_send_command("AT+CLVL=102", NULL);
+        at_send_command("AT+CLVL=51", NULL);
+
+  } else {
     /*  atchannel is tolerant of echo but it must */
     /*  have verbose result codes */
     at_send_command("ATE0Q0V1", NULL);
 
-	if(!isgsm)
 		return;
 	
     /*  No auto-answer */
@@ -2062,7 +2095,7 @@ static void initializeCallback(void *param)
 
 #endif /* USE_TI_COMMANDS */
 
-
+  }
     /* assume radio is off on error */
     if (isRadioOn() > 0) {
         setRadioState (RADIO_STATE_SIM_NOT_READY);
