@@ -123,6 +123,7 @@ static void pollSIMState (void *param);
 static void setRadioState(RIL_RadioState newState);
 
 static int isgsm=0;
+static int dataCall=0;
 static char *callwaiting_num;
 
 static void handle_cdma_ccwa (const char *s)
@@ -130,7 +131,6 @@ static void handle_cdma_ccwa (const char *s)
     int err;
     char *line, *tmp;
 
-    LOGE("in handle_cdma_ccwa");
     line = tmp = strdup(s);
     err = at_tok_start(&tmp);
     if (err)
@@ -331,10 +331,12 @@ static void requestOrSendPDPContextList(RIL_Token *t)
 {
     ATResponse *p_response;
     ATLine *p_cur;
+    RIL_PDP_Context_Response *responses;
     int err;
     int n = 0;
     char *out;
 
+  if (isgsm) {
     err = at_send_command_multiline ("AT+CGACT?", "+CGACT:", &p_response);
     if (err != 0 || p_response->success == 0) {
         if (t != NULL)
@@ -349,8 +351,7 @@ static void requestOrSendPDPContextList(RIL_Token *t)
          p_cur = p_cur->p_next)
         n++;
 
-    RIL_PDP_Context_Response *responses =
-        alloca(n * sizeof(RIL_PDP_Context_Response));
+    responses = alloca(n * sizeof(RIL_PDP_Context_Response));
 
     int i;
     for (i = 0; i < n; i++) {
@@ -444,6 +445,26 @@ static void requestOrSendPDPContextList(RIL_Token *t)
 
     at_response_free(p_response);
 
+  } else {
+    //non-GSM, gotta check if we're connected!
+    n = 1;
+    responses = alloca(sizeof(RIL_PDP_Context_Response));
+
+    responses[0].cid = 1;
+    responses[0].active = 0;
+    responses[0].type = "";
+    responses[0].apn = "internet";
+    responses[0].address = "";
+    //Let Android know where we're at.
+    if ( dataCall == 0 ) {
+	dataCall = 1;
+	responses[0].active = 1;
+    } else {
+	dataCall = 0;
+	responses[0].active = 0;
+    }
+  }
+
     if (t != NULL)
         RIL_onRequestComplete(*t, RIL_E_SUCCESS, responses,
                               n * sizeof(RIL_PDP_Context_Response));
@@ -472,6 +493,7 @@ static void requestQueryNetworkSelectionMode(
     int response = 0;
     char *line;
 
+  if(isgsm) { //this command conflicts with the network status command
     err = at_send_command_singleline("AT+COPS?", "+COPS:", &p_response);
 
     if (err < 0 || p_response->success == 0) {
@@ -491,6 +513,7 @@ static void requestQueryNetworkSelectionMode(
     if (err < 0) {
         goto error;
     }
+  }
 
     RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(int));
     at_response_free(p_response);
@@ -804,7 +827,7 @@ static void requestRegistrationState(int request, void *data,
 	response[1]=-1;
 	response[2]=-1;
 
-	if(isgsm) {
+  if(isgsm) {
     if (request == RIL_REQUEST_REGISTRATION_STATE) {
         cmd = "AT+CREG?";
         prefix = "+CREG:";
@@ -815,7 +838,10 @@ static void requestRegistrationState(int request, void *data,
         assert(0);
         goto error;
     }
-
+  } else {
+    cmd = "AT+COPS?";
+    prefix= "$HTC_SYSTYPE";
+  }
     err = at_send_command_singleline(cmd, prefix, &p_response);
 
     if (err != 0) goto error;
@@ -824,7 +850,7 @@ static void requestRegistrationState(int request, void *data,
 
     err = at_tok_start(&line);
     if (err < 0) goto error;
-		
+  if (isgsm) {		
     /* Ok you have to be careful here
      * The solicited version of the CREG response is
      * +CREG: n, stat, [lac, cid]
@@ -871,7 +897,7 @@ static void requestRegistrationState(int request, void *data,
             if (err < 0) goto error;
         break;
 
-				case 2: // +CREG: <stat>, <lac>, <cid> 
+	case 2: // +CREG: <stat>, <lac>, <cid> 
             err = at_tok_nextint(&line, &response[0]);
             if (err < 0) goto error;
             err = at_tok_nexthexint(&line, &response[1]);
@@ -889,57 +915,55 @@ static void requestRegistrationState(int request, void *data,
             err = at_tok_nexthexint(&line, &response[2]);
             if (err < 0) goto error;
 
-			/* Hack for broken +CGREG responses which don't return the network type */
-			if(isgsm) {
-				if(request == RIL_REQUEST_GPRS_REGISTRATION_STATE) {
-				    ATResponse *p_response_op = NULL;
-    				err = at_send_command_singleline("AT+COPS?", "+COPS:", &p_response_op);
-					/* We need to get the 4th return param */
-					int commas_op;
-					commas_op = 0;
-					char *p_op, *line_op;					
-					line_op = p_response_op->p_intermediates->line;
+	    /* Hack for broken +CGREG responses which don't return the network type */
+	    if(request == RIL_REQUEST_GPRS_REGISTRATION_STATE) {
+		ATResponse *p_response_op = NULL;
+    		err = at_send_command_singleline("AT+COPS?", "+COPS:", &p_response_op);
+		/* We need to get the 4th return param */
+		int commas_op;
+		commas_op = 0;
+		char *p_op, *line_op;					
+		line_op = p_response_op->p_intermediates->line;
 	
-					for (p_op = line_op ; *p_op != '\0' ;p_op++) {
-						if (*p_op == ',') commas_op++;
-					}
+		for (p_op = line_op ; *p_op != '\0' ;p_op++) {
+			if (*p_op == ',') commas_op++;
+		}
 					
-					if (commas_op == 3) {
-						count = 4;
-			            err = at_tok_start(&line_op);
-			            err = at_tok_nextint(&line_op, &skip);
-			            if (err < 0) goto error;
-			            err = at_tok_nextint(&line_op, &skip);
-			            if (err < 0) goto error;
-			            err = at_tok_nextint(&line_op, &skip);
-			            if (err < 0) goto error;
-			            err = at_tok_nextint(&line_op, &response[3]);
-			            if (err < 0) goto error;
-						/* Now translate to 'Broken Android Speak' - can't follow the GSM spec */						
-						switch(response[3]) {
-							/* GSM/GSM Compact - aka GRPS */
-							case 0: 
-							case 1:
-								response[3] = 1;
-								break;
-							/* EGPRS - aka EDGE */
-							case 3:
-								response[3] = 2;
-								break;
-							/* UTRAN - UMTS or better */
-							case 2:
-							case 4:
-							case 5:
-							case 6:
-							case 7:
-								response[3] = 3;
-								break;
-						}
-					}
+		if (commas_op == 3) {
+		    count = 4;
+		    err = at_tok_start(&line_op);
+		    err = at_tok_nextint(&line_op, &skip);
+		    if (err < 0) goto error;
+		    err = at_tok_nextint(&line_op, &skip);
+		    if (err < 0) goto error;
+		    err = at_tok_nextint(&line_op, &skip);
+		    if (err < 0) goto error;
+		    err = at_tok_nextint(&line_op, &response[3]);
+		    if (err < 0) goto error;
+		    /* Now translate to 'Broken Android Speak' - can't follow the GSM spec */						
+		    switch(response[3]) {
+			/* GSM/GSM Compact - aka GRPS */
+			case 0: 
+			case 1:
+				response[3] = 1;
+				break;
+			/* EGPRS - aka EDGE */
+			case 3:
+				response[3] = 2;
+				break;
+			/* UTRAN - UMTS or better */
+			case 2:
+			case 4:
+			case 5:
+			case 6:
+			case 7:
+				response[3] = 3;
+				break;
+		    }
+		}
 
-				    at_response_free(p_response_op);
-    			}
-			}
+		at_response_free(p_response_op);
+    	    }
         break;
         // special case for CGREG, there is a fourth parameter
 	// that is the network type (unknown/gprs/edge/umts)
@@ -959,8 +983,21 @@ static void requestRegistrationState(int request, void *data,
         break;
         default:
             goto error;
-    }
 	}
+  } else { //CDMA
+    if (request == RIL_REQUEST_GPRS_REGISTRATION_STATE) {
+	if ( dataCall == 0 )
+	    response[0] = 3;
+	else
+	    response[0] = 1;
+	err = at_tok_nextint(&line, &response[3]);
+	if (response[3] < 1)
+	    response[3] = 1;
+	if (response[3] > 3)
+	    response[3] = 3;
+	count = 4;
+    }
+  }
     asprintf(&responseStr[0], "%d", response[0]);
     asprintf(&responseStr[1], "%d", response[1]);
     asprintf(&responseStr[2], "%d", response[2]);
@@ -985,22 +1022,22 @@ static void requestMute(void *data, size_t datalen, RIL_Token t)
 	int response[1];
 	char *line;
 
-	if(!isgsm)
-	    RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
-	else {
-		err = at_send_command_singleline("AT+MUT", "+CMUT:", &p_response);
+	if(!isgsm) {
+	    err = at_send_command_singleline("AT+CMUT?", "+CMUT:", &p_response);
+	} else {
+	    err = at_send_command_singleline("AT+MUT", "+CMUT:", &p_response);
+	}
         if (err < 0 || p_response->success == 0) {
             goto error;
         } 
 		
-		line = p_response->p_intermediates->line;
-	    err = at_tok_start(&line);
+	line = p_response->p_intermediates->line;
+	err = at_tok_start(&line);
         if (err < 0) goto error;
         err = at_tok_nextint(&line, &response[0]);
 
         RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(char*));
         at_response_free(p_response);
-    }
 
 	return;
 error:
@@ -1251,7 +1288,7 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 		*/
 	}
   } else {
-	// CDMA...
+    // CDMA...
   }
   RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	at_response_free(p_response);
@@ -1640,7 +1677,6 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 	    
 
         case RIL_REQUEST_SET_NETWORK_SELECTION_AUTOMATIC:
-			   	 	if(isgsm)
 	    				at_send_command("AT+COPS=0", NULL);
 	    			RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
           	break;
@@ -1710,9 +1746,6 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 	case RIL_REQUEST_SET_MUTE: {
 		char * cmd;
 		p_response = NULL;
-		if(!isgsm)
-		    RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
-		else {
 			if (((int *)data)[0])
 	            asprintf(&cmd, "AT+CMUT=1");
 			else
@@ -1725,7 +1758,6 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
                 RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
             }
             at_response_free(p_response);
-        }
 	    }
 	    break;
 		
@@ -1785,7 +1817,7 @@ static void onCancel (RIL_Token t)
 
 static const char * getVersion(void)
 {
-    return "android reference-ril 1.0";
+    return "HTC Vogue Community RIL 0.8";
 }
 
 static void
@@ -2027,6 +2059,7 @@ static void initializeCallback(void *param)
     /*  don't hide outgoing callerID */
         at_send_command("AT+CLIR=0", NULL);
         at_send_command("AT", NULL);
+
         at_send_command("AT+COPS=0", NULL);
 //      at_send_command("AT+HTC_GPSONE=4", NULL);
         at_send_command("AT+CLVL=102", NULL);
@@ -2036,8 +2069,6 @@ static void initializeCallback(void *param)
     /*  atchannel is tolerant of echo but it must */
     /*  have verbose result codes */
     at_send_command("ATE0Q0V1", NULL);
-
-		return;
 	
     /*  No auto-answer */
     at_send_command("ATS0=0", NULL);
@@ -2163,6 +2194,7 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 #endif /* WORKAROUND_FAKE_CGEV */
     } else if (strStartsWith(s,"+CREG:")
                 || strStartsWith(s,"+CGREG:")
+		|| strStartsWith(s,"$HTC_SYSTYPE:")
     ) {
         RIL_onUnsolicitedResponse (
             RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED,
@@ -2201,6 +2233,27 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
     } else if (strStartsWith(s, "+CME ERROR: 150")) {
         RIL_requestTimedCallback (onPDPContextListChanged, NULL, NULL);
 #endif /* WORKAROUND_FAKE_CGEV */
+    } else if (strStartsWith(s, "$HTC_3GIND:")) {
+	//set the 3G indicator...
+
+	int ind3g = -1;
+
+        line = strdup(s);
+        at_tok_start(&line);
+
+        err = at_tok_nextint(&line, &ind3g);
+
+        if (err != 0) {
+            LOGE("invalid 3GIND %s\n", s);
+        } else {
+	    if ( ind3g > -1 && ind3g < 3 ) {
+		if ( (dataCall == 1 && ind3g == 0) || (dataCall == 0 && ind3g != 0) )
+        	    RIL_requestTimedCallback (onPDPContextListChanged, NULL, NULL);
+		    RIL_onUnsolicitedResponse (
+		        RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED,
+        		NULL, 0);
+	    }
+        }
     }
 }
 
