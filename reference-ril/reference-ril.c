@@ -129,12 +129,14 @@ static char *callwaiting_num;
 static void handle_cdma_ccwa (const char *s)
 {
     int err;
-    char *line = strdup(s);
+    char *line, *tmp;
 
-    err = at_tok_start(&line);
+    LOGE("in handle_cdma_ccwa");
+    line = tmp = strdup(s);
+    err = at_tok_start(&tmp);
     if (err)
         return;
-    err = at_tok_nextstr(&line, &callwaiting_num);
+    err = at_tok_nextstr(&tmp, &callwaiting_num);
     if (err)
         return;
     callwaiting_num = strdup(callwaiting_num);
@@ -142,8 +144,8 @@ static void handle_cdma_ccwa (const char *s)
     LOGE("successfully set callwaiting_numn");
 }
 
-extern char** cdma_to_gsmpdu(char *);
-extern char* gsm_to_cdmapdu(char *);
+extern char** cdma_to_gsmpdu(const char *);
+extern char* gsm_to_cdmapdu(const char *);
 
 static int clccStateToRILState(int state, RIL_CallState *p_state)
 
@@ -582,15 +584,28 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
         ) {
             needRepoll = 1;
         }
-
-        countValidCalls++;
+		if(p_calls[countValidCalls].isVoice) // only count voice calls
+	        countValidCalls++;
     }
 
     if (l_callwaiting_num) {
         char fake_clcc[64];
+        int index = p_calls[countValidCalls-1].index+1;
+
+        /* Try not to use an index greater than 9 */
+        if (index > 9) {
+            int i;
+
+            for (i=countValidCalls-2; i >= 0; i++) {
+                if (p_calls[i].index < 9) {
+                    index = p_calls[i].index+1;
+                    break;
+                }
+            }
+        }
+
         snprintf(fake_clcc, 64, "+CLCC: %d,0,5,0,0,\"%s\",129",
-                 p_calls[countValidCalls-1].index+1,
-                 l_callwaiting_num);
+                 index, l_callwaiting_num);
         free(l_callwaiting_num);
         err = callFromCLCCLine(fake_clcc, p_calls + countValidCalls);
         if (err == 0) {
@@ -628,8 +643,11 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
     s_expectAnswer = 0;
     s_repollCallsCount = 0;
 #endif /*WORKAROUND_ERRONEOUS_ANSWER*/
-	if(countCalls==0) // close audio if no calls.
+	LOGI("Calls=%d,Valid=%d\n",countCalls,countValidCalls);
+	if(countValidCalls==0) { // close audio if no voice calls.
+		LOGI("Audio Close\n");
 		writesys("audio","5");
+	}
 		
     RIL_onRequestComplete(t, RIL_E_SUCCESS, pp_calls,
             countValidCalls * sizeof (RIL_Call *));
@@ -1079,7 +1097,7 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
     char *cmd1, *cmd2;
     RIL_SMS_Response response;
     ATResponse *p_response = NULL;
-    char * cdma;
+    char * cdma=0;
   	char sendstr[256];
 
     smsc = ((const char **)data)[0];
@@ -1095,8 +1113,8 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 	  strcpy(sendstr,"00");
 		strcat(sendstr,pdu);
 		LOGI("GSM PDU=%s",pdu);
-    cdma=gsm_to_cdmapdu(sendstr);
-	  tpLayerLength = strlen(cdma)/2;
+    	cdma=gsm_to_cdmapdu(sendstr);
+	  	tpLayerLength = strlen(cdma)/2;
 	}
     asprintf(&cmd1, "AT+CMGS=%d", tpLayerLength);
 	if(isgsm)
@@ -1432,7 +1450,8 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             // 3GPP 22.030 6.5.5
             // "Releases all held calls or sets User Determined User Busy
             //  (UDUB) for a waiting call."
-            at_send_command("AT+CHLD=0", NULL);
+            if (isgsm)
+                at_send_command("AT+CHLD=0", NULL);
             /* success or failure is ignored by the upper layer here.
                it will call GET_CURRENT_CALLS and determine success that way */
             RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
@@ -1456,7 +1475,10 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             // 3GPP 22.030 6.5.5
             // "Places all active calls (if any exist) on hold and accepts
             //  the other (held or waiting) call."
-            at_send_command("AT+CHLD=2", NULL);
+            if (isgsm)
+                at_send_command("AT+CHLD=2", NULL);
+            else
+                at_send_command("AT+HTC_SENDFLASH", NULL);
 
 #ifdef WORKAROUND_ERRONEOUS_ANSWER
             s_expectAnswer = 1;

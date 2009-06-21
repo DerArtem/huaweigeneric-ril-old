@@ -85,7 +85,7 @@ void get_code_and_length(char *msg, int *code, int *length) {
 	*length=hex2int(msg[2])*16+hex2int(msg[3]);
 }
 
-void decode_bearer_data(char *msg, int length, char *message) {
+void decode_bearer_data(char *msg, int length, char *message, int *is_vm) {
     int i=0,j;
     int code,sublength;
 
@@ -107,8 +107,13 @@ void decode_bearer_data(char *msg, int length, char *message) {
                 }
             *message=0;
         } else if (code == 11 && sublength == 1) {
-            int msgs = hex2int(msg[i*2+4])+16*hex2int(msg[i*2+5]);
-            message += snprintf(message, 7, "MSGS:%c", msgs ? '1' : '0');
+            int msgs;
+            if (is_vm) {
+                *is_vm = 1;
+                msgs = hex2int(msg[i*2+4])+16*hex2int(msg[i*2+5]);
+                if (msgs)
+                    *is_vm |= 0x10;
+            }
         }
         i+=sublength+2;
     }
@@ -145,17 +150,21 @@ int encode_bearer_data(char *msg, char *data) {
 	return (msg-start)/2;
 }
 
-void decode_cdma_sms(char *pdu, char *from, char *message) {
+void decode_cdma_sms(char *pdu, char *from, char *message, int *is_vm) {
     unsigned int i=1;
     int code,length;
     strcpy(from,"000000"); // in case something fails
     strcpy(message,"UNKNOWN"); 
+    
+    if (is_vm)
+        *is_vm = 0;
+
     while(i*2<strlen(pdu)) {
         get_code_and_length(pdu+i*2,&code,&length);
         if(code==2) // from
             decode_number(pdu+i*2+4,length,from);
         if(code==8) // bearer_data
-            decode_bearer_data(pdu+i*2+4,length,message);
+            decode_bearer_data(pdu+i*2+4,length,message,is_vm);
         i+=length+2;
     }
 }
@@ -191,22 +200,20 @@ char **cdma_to_gsmpdu(char *msg) {
 	static char *hexpdus[16];
 	int i=0;
         int is_vm=0;
-	decode_cdma_sms(msg,from,message);
+	decode_cdma_sms(msg,from,message,&is_vm);
 //	if(strlen(message)>=160) message[159]=0;
 	LOGD("CDMA Message:%s From:%s\n",message,from);
 	SmsAddressRec smsaddr;
 	SmsTimeStampRec smstime;
-        if (!strcmp(from, "000000") && !strncmp(message, "MSGS:", 5)) {
+        if (is_vm) {
             /* voicemail notifications must have a 4 byte address */
-            if (message[5] == '1') {
+            if (is_vm & 0x10) {
                 /* set message waiting indicator */
                 strcpy(from, "1100");
             } else {
                 /* clear message waiting indicator */
                 strcpy(from, "0100");
             }
-            strcpy(message, " ");
-            is_vm = 1;
         }
 	sms_address_from_str(&smsaddr,from,strlen(from));
         if (is_vm) {
