@@ -145,6 +145,7 @@ static void handle_cdma_ccwa (const char *s)
 
 extern char** cdma_to_gsmpdu(const char *);
 extern char* gsm_to_cdmapdu(const char *);
+extern int hex2int(const char);
 
 static int clccStateToRILState(int state, RIL_CallState *p_state)
 
@@ -446,23 +447,15 @@ static void requestOrSendPDPContextList(RIL_Token *t)
     at_response_free(p_response);
 
   } else {
-    //non-GSM, gotta check if we're connected!
+    //non-GSM
     n = 1;
     responses = alloca(sizeof(RIL_PDP_Context_Response));
 
     responses[0].cid = 1;
-    responses[0].active = 0;
+    responses[0].active = dataCall;
     responses[0].type = "";
     responses[0].apn = "internet";
     responses[0].address = "";
-    //Let Android know where we're at.
-    if ( dataCall == 0 ) {
-	dataCall = 1;
-	responses[0].active = 1;
-    } else {
-	dataCall = 0;
-	responses[0].active = 0;
-    }
   }
 
     if (t != NULL)
@@ -733,6 +726,8 @@ static void requestWriteSmsToSim(void *data, size_t datalen, RIL_Token t)
 
     err = at_send_command_sms(cmd, p_args->pdu, "+CMGW:", &p_response);
 
+    free(cmd);
+
     if (err != 0 || p_response->success == 0) goto error;
 
     RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
@@ -822,6 +817,7 @@ static void requestRegistrationState(int request, void *data,
     char *line, *p;
     int commas;
     int skip;
+    int i;
     int count = 3;
 	response[0]=1;
 	response[1]=-1;
@@ -842,7 +838,9 @@ static void requestRegistrationState(int request, void *data,
     cmd = "AT+COPS?";
     prefix= "$HTC_SYSTYPE";
   }
-    err = at_send_command_singleline(cmd, prefix, &p_response);
+    err = 1;
+    for (i=0;i<4 && err != 0;i++)
+	err = at_send_command_singleline(cmd, prefix, &p_response);
 
     if (err != 0) goto error;
 
@@ -1160,6 +1158,9 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 
     err = at_send_command_sms(cmd1, cmd2, "+CMGS:", &p_response);
 
+    free(cmd1);
+    free(cmd2);
+
     if (err != 0 || p_response->success == 0) goto error;
 
     memset(&response, 0, sizeof(response));
@@ -1322,6 +1323,71 @@ error:
 
 }
 
+static void requestGetIMSI(void *data, size_t datalen, RIL_Token t)
+{
+    ATResponse *p_response = NULL;
+    char *imsi;
+    char *line;
+    char *response;
+    char *part;
+    int err;
+    if(isgsm) {
+	err = at_send_command_numeric("AT+CIMI", &p_response);
+        if (err < 0 || p_response->success == 0)
+	    goto error;
+        
+	imsi = strdup(p_response->p_intermediates->line);
+        
+    } else {
+        err = at_send_command_singleline("AT+COPS?", "+COPS:", &p_response);
+
+        if (err < 0 || p_response->success == 0)
+	    goto error;
+        line = p_response->p_intermediates->line;
+
+        at_tok_start(&line);
+        err = at_tok_nextstr(&line, &response);
+        if (err < 0)
+	    goto error;
+        err = at_tok_nextstr(&line, &response);
+        if (err < 0)
+	    goto error;
+        err = at_tok_nextstr(&line, &response);
+        if (err < 0)
+	    goto error;
+
+	part = strdup(response);
+
+	at_response_free(p_response);
+
+        err = at_send_command_singleline("AT+CNUM", "+CNUM:", &p_response);
+
+        if (err < 0 || p_response->success == 0)
+	    goto error;
+        line = p_response->p_intermediates->line;
+
+        at_tok_start(&line);
+        err = at_tok_nextstr(&line, &response);
+        if (err < 0)
+	    goto error;
+        err = at_tok_nextstr(&line, &response);
+        if (err < 0)
+	    goto error;
+        //FIXME make it work with the real IMSI: asprintf(&imsi, "%s%s", part, response); //Real opID
+        asprintf(&imsi, "310995000000000"); //Fake opID
+
+	free (part);
+    }
+
+    RIL_onRequestComplete(t, RIL_E_SUCCESS, imsi, sizeof(char *));
+    free (imsi);
+    at_response_free(p_response);
+    return;
+error:
+    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    at_response_free(p_response);
+}
+
 static void  requestSIM_IO(void *data, size_t datalen, RIL_Token t)
 {
     ATResponse *p_response = NULL;
@@ -1346,7 +1412,7 @@ static void  requestSIM_IO(void *data, size_t datalen, RIL_Token t)
                     p_args->command, p_args->fileid,
                     p_args->p1, p_args->p2, p_args->p3, p_args->data);
     }
-
+  if(isgsm){
     err = at_send_command_singleline(cmd, "+CRSM:", &p_response);
 
     if (err < 0 || p_response->success == 0) {
@@ -1368,7 +1434,62 @@ static void  requestSIM_IO(void *data, size_t datalen, RIL_Token t)
         err = at_tok_nextstr(&line, &(sr.simResponse));
         if (err < 0) goto error;
     }
+  } else {
+	//CDMA
+	if(p_args->fileid != 0x6f40) {
+            LOGE("SIM IO Request: %s\n", cmd);
+	    RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
+	    at_response_free(p_response);
+	    free(cmd);
+	    return;
+	} else { //Asking for the MSISDN or phone number. 1+ bytes alpha id (leave null), 1 byte length of bcd number (set to 11), 1 byte TON/NPI (set to FF), 10 byte phone num, 1 byte capability id, 1 byte extension id
+	    sr.sw1=144;
+	    sr.sw2=0;
 
+	    if(p_args->command == 192)
+	    	asprintf(&sr.simResponse,"000000806f40040011a0aa01020120");
+	    else {
+		char * msid;
+		char * response;
+		int plus = 0;
+		int length;
+		int i;
+		int curChar=0;
+
+            	err = at_send_command_singleline("AT+CNUM", "+CNUM:", &p_response);
+
+            	if (err < 0 || p_response->success == 0)
+	            goto error;
+            	line = p_response->p_intermediates->line;
+
+            	at_tok_start(&line);
+            	err = at_tok_nextstr(&line, &response);
+            	if (err < 0)
+	       	    goto error;
+            	err = at_tok_nextstr(&line, &response);
+            	if (err < 0)
+	            goto error;
+
+		if(response[0]=='+')
+			plus = 1;
+
+		length = strlen(response) - plus;
+		asprintf(&msid,"%.2x%.2dFFFFFFFFFFFFFFFFFFFF",(length + 1) / 2 + 1, 81 + plus * 10);
+
+		for (i = 0; curChar < length - 1; i+=2 ) {
+			msid[5+i] = response[plus+curChar++];
+	                msid[4+i] = response[plus+curChar++];
+		}
+
+		if ( length % 2) //One extra number
+                	msid[4+length] = response[curChar];
+		
+	    	asprintf(&sr.simResponse,"ffffffffffffffffffffffffffffffffffff%sffff",msid);
+		free(msid);
+	    }
+        }
+  }
+	
     RIL_onRequestComplete(t, RIL_E_SUCCESS, &sr, sizeof(sr));
     at_response_free(p_response);
     free(cmd);
@@ -1617,40 +1738,42 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             break;
 
         case RIL_REQUEST_GET_IMSI:
-            p_response = NULL;
-						if(isgsm) {
-							err = at_send_command_numeric("AT+CIMI", &p_response);
-								if (err < 0 || p_response->success == 0) {
-										RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
-								} else {
-										RIL_onRequestComplete(t, RIL_E_SUCCESS,
-												p_response->p_intermediates->line, sizeof(char *));
-								}
-						}
-	    			else
-				    	RIL_onRequestComplete(t, RIL_E_SUCCESS,"310995000000000", sizeof(char *));
-            at_response_free(p_response);
+            requestGetIMSI(data, datalen, t);
             break;
 
         case RIL_REQUEST_GET_IMEI:
             p_response = NULL;
-						if(isgsm) {
-									err = at_send_command_numeric("AT+CGSN", &p_response);
-									if (err < 0 || p_response->success == 0) {
-											RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
-									} else {
-											RIL_onRequestComplete(t, RIL_E_SUCCESS,
-													p_response->p_intermediates->line, sizeof(char *));
-									}
-						} else
-							RIL_onRequestComplete(t, RIL_E_SUCCESS,"000000000000000", sizeof(char *));
+		if(isgsm) {
+			err = at_send_command_numeric("AT+CGSN", &p_response);
+			if (err < 0 || p_response->success == 0) {
+				RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+			} else {
+				RIL_onRequestComplete(t, RIL_E_SUCCESS,
+				p_response->p_intermediates->line, sizeof(char *));
+			}
+		} else {
+			char * line;
+			unsigned long int imei;
+			char * imeiString;
+			err = at_send_command_numeric("AT+GSN", &p_response);
+			if (err < 0 || p_response->success == 0) {
+				RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+			} else {
+				line = p_response->p_intermediates->line;
+				imei = (unsigned long)hex2int(line[9]) + (unsigned long)16*hex2int(line[8]) 
+				    + (unsigned long)256*hex2int(line[7]) + (unsigned long)4096*hex2int(line[6]) 
+				    + (unsigned long)65536*hex2int(line[5]) + (unsigned long)1048576*hex2int(line[4])
+				    + (unsigned long)16777216*hex2int(line[3]) + (unsigned long)268435456*hex2int(line[2]);
+				asprintf(&imeiString,"%015lu",imei);
+				RIL_onRequestComplete(t, RIL_E_SUCCESS,imeiString, sizeof(char *));
+				free(imeiString);
+			}
+
+		}
             at_response_free(p_response);
             break;
 	    
         case RIL_REQUEST_SIM_IO:
-						if(!isgsm)
-							RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
-						else 
 								requestSIM_IO(data,datalen,t);
 						break;
 			
@@ -2151,7 +2274,6 @@ static void waitForClose()
  */
 static void onUnsolicited (const char *s, const char *sms_pdu)
 {
-    char *line = NULL;
     int err;
 
     /* Ignore unsolicited responses until we're initialized.
@@ -2165,10 +2287,9 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
         /* TI specific -- NITZ time */
         char *response;
 
-        line = strdup(s);
-        at_tok_start(&line);
+        at_tok_start(&s);
 
-        err = at_tok_nextstr(&line, &response);
+        err = at_tok_nextstr(&s, &response);
 
         if (err != 0) {
             LOGE("invalid NITZ line %s\n", s);
@@ -2235,23 +2356,28 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 #endif /* WORKAROUND_FAKE_CGEV */
     } else if (strStartsWith(s, "$HTC_3GIND:")) {
 	//set the 3G indicator...
-
+		
 	int ind3g = -1;
 
-        line = strdup(s);
-        at_tok_start(&line);
+        at_tok_start(&s);
 
-        err = at_tok_nextint(&line, &ind3g);
+        err = at_tok_nextint(&s, &ind3g);
 
         if (err != 0) {
             LOGE("invalid 3GIND %s\n", s);
         } else {
 	    if ( ind3g > -1 && ind3g < 3 ) {
-		if ( (dataCall == 1 && ind3g == 0) || (dataCall == 0 && ind3g != 0) )
+		if ( (dataCall == 1 && ind3g == 0) || (dataCall == 0 && ind3g != 0) ){
+    		    if ( dataCall == 0 )
+			dataCall = 1;
+    		    else
+			dataCall = 0;
+		    sleep(5);
         	    RIL_requestTimedCallback (onPDPContextListChanged, NULL, NULL);
 		    RIL_onUnsolicitedResponse (
 		        RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED,
         		NULL, 0);
+		}
 	    }
         }
     }
