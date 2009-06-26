@@ -94,25 +94,25 @@ void decode_bearer_data(char *msg, int length, char *message, int *is_vm) {
         if(code==1) {
             int encoding=getbits(msg+i*2+4,0,5);
             int nchars=getbits(msg+i*2+4,5,8);
-                if(encoding==2 || encoding==3) {
-                    for(j=0;j<nchars;j++)
-                        *message++=getbits(msg+i*2+4,13+7*j,7);
-                } else 
-                if(encoding==8) {
+            if(encoding==2 || encoding==3) {
                for(j=0;j<nchars;j++)
-                  *message++=getbits(msg+i*2+4,13+8*j,8);
-            } else {
+                   *message++=getbits(msg+i*2+4,13+7*j,7);
+            } else 
+               if(encoding==8 || encoding==0) {
+                 for(j=0;j<nchars;j++)
+                 *message++=getbits(msg+i*2+4,13+8*j,8);
+                } else {
                     strcpy(message,"bad SMS encoding");
                     message+=16;
                 }
-            *message=0;
-        } else if (code == 11 && sublength == 1) {
-            int msgs;
-            if (is_vm) {
+                *message=0;
+            } else if (code == 11 && sublength == 1) {
+              int msgs;
+              if (is_vm) {
                 *is_vm = 1;
                 msgs = hex2int(msg[i*2+4])+16*hex2int(msg[i*2+5]);
                 if (msgs)
-                    *is_vm |= 0x10;
+                   *is_vm |= 0x10;
             }
         }
         i+=sublength+2;
@@ -258,31 +258,3 @@ char *gsm_to_cdmapdu(char *msg) {
 	return hexpdu;
 }
 
-/*
-int main() {
-	char  msg3[]="00000210020206026886089E9C08220003145C10010E10748CBB366F41930F2D9A77674003060805272056520C000D0100";
-	char  msg2[]="0000021002040401222140060100081300032733A0010610253A93E8000801000D0100"; // cdma
-	char  msg1[]="0001000481885800000453ea130a"; // gsm from android
-	char  msg6[]="002006810000000000805003316223840453ea130a";
-//					002006810000000000805003319074840453ea130a
-					//  0001002006810000000000805003314005840453ea130a
-	char  msg[]="00010004815454000004d4f29c0e";
-	char  msg4[]="000100069110090000F111000A9210299232900000AAA06374580E529DE7ED08FD1D1993DB6138B98E1AA3C37290AA3D3FA740000508041AA3C37210FD0D90D56C809D0204028DD16139A85D9ECFC3E7324056B301760A100834A787E9E931688C0ECB41E8321E4EAE036A311960A7008140D3F63C4826CBCBF3B9B43C06CDDBF330992CDF2914201068DA9E438955109C5CEFCDDB7338B91E19CBCB617A396296BFDB";
-//	char *gsmpdu=cdma_to_gsmpdu(msg3);	
-//	printf("GSM PDU=%s\n",gsmpdu);
-	char msg5[512];
-	
-	encode_cdma_sms(msg5,"8885","0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789");
-	printf("CDMA PDU=%s\n",msg5);
-
-	char *gsmpdu=cdma_to_gsmpdu(msg5);
-   printf("GSM PDU=%s\n",gsmpdu);
-//	encode_gsm_sms(gsmpdu,"8885","STOP");
-
-	char *cdmapdu=gsm_to_cdmapdu(msg1);
-	printf("CDMA PDU=%s\n",cdmapdu);
-
-	gsmpdu=cdma_to_gsmpdu(cdmapdu);
-	printf("GSM PDU=%s\n",gsmpdu);
-}
-*/
