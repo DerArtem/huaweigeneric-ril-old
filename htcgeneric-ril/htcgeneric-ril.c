@@ -1,4 +1,4 @@
-/* //device/system/reference-ril/reference-ril.c
+/* //device/system/htcgeneric-ril/htcgeneric-ril.c
 **
 ** Copyright 2006, The Android Open Source Project
 **
@@ -2409,7 +2409,7 @@ static void onATTimeout()
 static void usage(char *s)
 {
 #ifdef RIL_SHLIB
-    fprintf(stderr, "reference-ril requires: -p <tcp port> or -d /dev/tty_device\n");
+    fprintf(stderr, "htcgeneric-ril requires: -p <tcp port> or -d /dev/tty_device\n");
 #else
     fprintf(stderr, "usage: %s [-p <tcp port>] [-d /dev/tty_device]\n", s);
     exit(-1);
