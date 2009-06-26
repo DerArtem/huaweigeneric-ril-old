@@ -41,6 +41,7 @@ ifeq (foo,foo)
   LOCAL_LDLIBS += -lpthread 
   LOCAL_CFLAGS += -DRIL_SHLIB 
   LOCAL_MODULE:= libhtcgeneric-ril
+  LOCAL_PRELINK_MODULE := false
   include $(BUILD_SHARED_LIBRARY)
 else
   #build executable
