@@ -124,6 +124,7 @@ static void setRadioState(RIL_RadioState newState);
 
 static int isgsm=0;
 static int dataCall=0;
+static char erisystem[50];
 static char *callwaiting_num;
 
 static void handle_cdma_ccwa (const char *s)
@@ -1108,7 +1109,7 @@ static void requestOperator(void *data, size_t datalen, RIL_Token t)
 		}
 	}
 	else {
-		response[0]="Android";
+		response[0]=erisystem;
 		response[1]="Android";
 		response[2]="310995";
 	}
@@ -2155,6 +2156,7 @@ static void initializeCallback(void *param)
        be handled in onATTimeout and onATReaderClosed */
 
   if(!isgsm) {
+	strcpy(erisystem,"Android");
     /*  atchannel is tolerant of echo but it must */
     /*  have verbose result codes */
         at_send_command("ATV1", NULL);
@@ -2380,6 +2382,21 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 		}
 	    }
         }
+    } else if (strStartsWith(s, "$HTC_ERIIND:")) {
+	int temp;
+	char *newEri;
+	at_tok_start(&s);
+
+	at_tok_nextint(&s, &temp);
+	at_tok_nextint(&s, &temp);
+	at_tok_nextint(&s, &temp);
+	at_tok_nextint(&s, &temp);
+	at_tok_nextint(&s, &temp);
+	at_tok_nextint(&s, &temp);
+	at_tok_nextint(&s, &temp);
+	at_tok_nextstr(&s, &newEri);
+	if(strlen(newEri)<50)
+	    strcpy(erisystem,newEri);
     }
 }
 
