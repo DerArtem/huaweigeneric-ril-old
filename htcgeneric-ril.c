@@ -2241,6 +2241,9 @@ static void initializeCallback(void *param)
     /*  SMS PDU mode */
     at_send_command("AT+CMGF=0", NULL);
 
+	/* No signal strengths */
+	at_send_command("AT@HTCCSQ=0", NULL);
+
 #ifdef USE_TI_COMMANDS
 
     at_send_command("AT%CPI=3", NULL);
