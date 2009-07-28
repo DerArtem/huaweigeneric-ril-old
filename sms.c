@@ -7,8 +7,14 @@
 #include <string.h>
 #include "sms_gsm.h"
 
+#ifndef nodroid
 #define LOG_TAG "SMS_RIL"
 #include <utils/Log.h>
+#else
+#define LOGD printf
+#define LOGE printf
+#define LOGI printf
+#endif
 
 int hex2int(char c) {
 	if(c>'9') return c-'A'+10;

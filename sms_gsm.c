@@ -680,6 +680,9 @@ sms_get_text_utf8( cbytes_t        *pcur,
     int       result = -1;
     int       len;
 
+#ifdef nodroid
+    printf("sms_get_text_utf8 %d %d\n",hasUDH,coding);
+#endif
     if (cur >= end)
         goto Exit;
 
@@ -700,7 +703,7 @@ sms_get_text_utf8( cbytes_t        *pcur,
         cur += hlen;
 
         if (coding == SMS_CODING_SCHEME_GSM7)
-            len -= 2*(hlen+1);
+            len -= (hlen*2-2);
         else
             len -= hlen+1;
 
@@ -716,6 +719,8 @@ sms_get_text_utf8( cbytes_t        *pcur,
         if (rope != NULL)
         {
             bytes_t  dst = gsm_rope_reserve( rope, count );
+	    if(hasUDH && dst)
+		*dst++=(*cur++)>>1;
             if (dst != NULL)
                 utf8_from_gsm7( cur, 0, len, dst );
         }
