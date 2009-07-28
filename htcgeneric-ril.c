@@ -1133,29 +1133,30 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
     RIL_SMS_Response response;
     ATResponse *p_response = NULL;
     char * cdma=0;
-  	char sendstr[256];
+    char sendstr[512];
 
     smsc = ((const char **)data)[0];
     pdu = ((const char **)data)[1];
 
-	  tpLayerLength = strlen(pdu)/2;
+    tpLayerLength = strlen(pdu)/2;
 
     // "NULL for default SMSC"
     if (smsc == NULL) {
         smsc= "00";
     }
-	if(!isgsm) {
-	  strcpy(sendstr,"00");
-		strcat(sendstr,pdu);
-		LOGI("GSM PDU=%s",pdu);
-    	cdma=gsm_to_cdmapdu(sendstr);
-	  	tpLayerLength = strlen(cdma)/2;
-	}
+
+    if(!isgsm) {
+        strcpy(sendstr,"00");
+        strcat(sendstr,pdu);
+        LOGI("GSM PDU=%s",pdu);
+        cdma=gsm_to_cdmapdu(sendstr);
+        tpLayerLength = strlen(cdma)/2;
+    }
     asprintf(&cmd1, "AT+CMGS=%d", tpLayerLength);
-	if(isgsm)
-		asprintf(&cmd2, "%s%s", smsc, pdu);
-	else
-    asprintf(&cmd2, "%s", cdma);
+    if(isgsm)
+        asprintf(&cmd2, "%s%s", smsc, pdu);
+    else
+        asprintf(&cmd2, "%s", cdma);
 
     err = at_send_command_sms(cmd1, cmd2, "+CMGS:", &p_response);
 
@@ -1170,7 +1171,6 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 
     RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(response));
     at_response_free(p_response);
-
     return;
 error:
     RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
