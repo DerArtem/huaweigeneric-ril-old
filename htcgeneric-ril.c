@@ -759,6 +759,14 @@ static void requestHangup(void *data, size_t datalen, RIL_Token t)
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 }
 
+static void requestScreenState(void *data, size_t datalen, RIL_Token t)
+{
+	int currentState = ((int *)data)[0];
+	//currentState == 1, screen on
+	//currentState == 0, screen off
+	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+}
+
 static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 {
 	ATResponse *p_response = NULL;
@@ -816,6 +824,9 @@ static void requestRegistrationState(int request, void *data,
 	int skip;
 	int i;
 	int count = 3;
+	int fd;
+	char status[1];
+
 	response[0]=1;
 	response[1]=-1;
 	response[2]=-1;
@@ -987,6 +998,15 @@ static void requestRegistrationState(int request, void *data,
 				response[3] = 3;
 			count = 4;
 		}
+	}
+	fd = open("/smodem/status",O_RDONLY);
+	if(fd != -1) {
+		read(fd,status,1);
+		close(fd);
+		if(strcmp(status,"1"))
+			dataCall = 0;
+		else
+			dataCall = 1;
 	}
 	if (request == RIL_REQUEST_GPRS_REGISTRATION_STATE && dataCall == 0)
 		response[0] = 3;
@@ -1173,111 +1193,101 @@ error:
 static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 {
 	const char *apn;
+	char *user = NULL;
+	char *pass = NULL;
 	char *cmd;
+	char *userpass;
 	int err;
 	ATResponse *p_response = NULL;
 	char *response[2] = { "1", PPP_TTY_PATH };
 
 	apn = ((const char **)data)[0];
+	if (((char **)data)[1] != NULL)
+		user = ((char **)data)[1];
+	else
+		strcpy(user,"none");
+	if (((char **)data)[2] != NULL)
+		pass = ((char **)data)[2];
+	else
+		strcpy(pass,"none");
 
-	if (0) {//This is all handled by the external MODEM application, as ppp connections are not currently properly handled by PDP/Android
-#ifdef USE_TI_COMMANDS
+
+//	if (0) {//This is all handled by the external MODEM application, as ppp connections are not currently properly handled by PDP/Android
+//#ifdef USE_TI_COMMANDS
 		// Config for multislot class 10 (probably default anyway eh?)
-		err = at_send_command("AT%CPRIM=\"GMM\",\"CONFIG MULTISLOT_CLASS=<10>\"",
-				NULL);
+//		err = at_send_command("AT%CPRIM=\"GMM\",\"CONFIG MULTISLOT_CLASS=<10>\"",
+//				NULL);
 
-		err = at_send_command("AT%DATA=2,\"UART\",1,,\"SER\",\"UART\",0", NULL);
-#endif /* USE_TI_COMMANDS */
+//		err = at_send_command("AT%DATA=2,\"UART\",1,,\"SER\",\"UART\",0", NULL);
+//#endif /* USE_TI_COMMANDS */
 
-		int fd, qmistatus;
-		size_t cur = 0;
-		size_t len;
-		ssize_t written, rlen;
-		char status[32] = {0};
-		int retry = 10;
+	int fd, pppstatus;
+	FILE *pppconfig;
+	size_t cur = 0;
+	size_t len;
+	ssize_t written, rlen;
+	char status[32] = {0};
+	int retry = 10;
 
-		LOGD("requesting data connection to APN '%s'", apn);
+	LOGD("requesting data connection to APN '%s'\n", apn);
 
-		fd = open ("/dev/qmi", O_RDWR);
-		if (fd >= 0) { /* the device doesn't exist on the emulator */
+	if((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
+		close(fd);
+		LOGD("pppd is running while trying to start dataconn\n");
+		//PPP Is already running. what do we do with this? for now exit with success
+	} else {
 
-			LOGD("opened the qmi device\n");
-			asprintf(&cmd, "up:%s", apn);
-			len = strlen(cmd);
-
-			while (cur < len) {
-				do {
-					written = write (fd, cmd + cur, len - cur);
-				} while (written < 0 && errno == EINTR);
-
-				if (written < 0) {
-					LOGE("### ERROR writing to /dev/qmi");
-					close(fd);
-					goto error;
-				}
-
-				cur += written;
-			}
-
-			// wait for interface to come online
-
-			do {
-				sleep(1);
-				do {
-					rlen = read(fd, status, 31);
-				} while (rlen < 0 && errno == EINTR);
-
-				if (rlen < 0) {
-					LOGE("### ERROR reading from /dev/qmi");
-					close(fd);
-					goto error;
-				} else {
-					status[rlen] = '\0';
-					LOGD("### status: %s", status);
-				}
-			} while (strncmp(status, "STATE=up", 8) && strcmp(status, "online") && --retry);
-
-			close(fd);
-
-			if (retry == 0) {
-				LOGE("### Failed to get data connection up\n");
-				goto error;
-			}
-
-			qmistatus = system("netcfg rmnet0 dhcp");
-
-			LOGD("netcfg rmnet0 dhcp: status %d\n", qmistatus);
-
-			if (qmistatus < 0) goto error;
-
-		} else {
-
+		if(isgsm) {
 			asprintf(&cmd, "AT+CGDCONT=1,\"IP\",\"%s\",,0,0", apn);
 			//FIXME check for error here
 			err = at_send_command(cmd, NULL);
 			free(cmd);
-
-			// Set required QoS params to default
+				// Set required QoS params to default
 			err = at_send_command("AT+CGQREQ=1", NULL);
-
-			// Set minimum QoS params to default
+				// Set minimum QoS params to default
 			err = at_send_command("AT+CGQMIN=1", NULL);
-
-			// packet-domain event reporting
+				// packet-domain event reporting
 			err = at_send_command("AT+CGEREP=1,0", NULL);
-
-			// Hangup anything that's happening there now
+				// Hangup anything that's happening there now
 			err = at_send_command("AT+CGACT=1,0", NULL);
-
-			// Start data on PDP context 1
+				// Start data on PDP context 1
 			err = at_send_command("ATD*99***1#", &p_response);
-
 			if (err < 0 || p_response->success == 0) {
 				goto error;
 			}
+		} else {
+			//CDMA
+			err = at_send_command("AT+HTC_DUN=0", NULL);
+			err = at_send_command("ATDT#777", NULL);
+			if (err < 0) {
+				goto error;
+			}
 		}
-	} else {
-		//if a datacall is requested, we must already have a valid data connection.
+
+		asprintf(&userpass, "%s * %s", user, pass);
+		len = strlen(userpass);
+		fd = open("/etc/ppp/pap-secrets",O_WRONLY);
+		if(fd < 0)
+			goto error;
+		write(fd, userpass, len);
+		close(fd);
+		fd = open("/etc/ppp/chap-secrets",O_WRONLY);
+		if(fd < 0)
+			goto error;
+		write(fd, userpass, len);
+		close(fd);
+		free(userpass);
+
+		pppconfig = fopen("/etc/ppp/options.smd1","a");
+		if(!pppconfig)
+			goto error;
+		fprintf(pppconfig,"\nname %s",user);
+		fclose(pppconfig);
+
+		sleep(2);
+		pppstatus = system("/bin/pppd /dev/smd1");
+		LOGD("pppd status %d\n", pppstatus);
+		if (pppstatus > 1) goto error;
 	}
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	at_response_free(p_response);
@@ -1286,7 +1296,6 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 error:
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	at_response_free(p_response);
-
 }
 
 static void requestSMSAcknowledge(void *data, size_t datalen, RIL_Token t)
@@ -1877,6 +1886,9 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			requestMute(data, datalen, t);
 			break;
 
+		case RIL_REQUEST_SCREEN_STATE:
+			requestScreenState(data, datalen, t);
+			break;
 
 		case RIL_REQUEST_ENTER_SIM_PIN:
 		case RIL_REQUEST_ENTER_SIM_PUK:
@@ -2310,9 +2322,7 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 		RIL_onUnsolicitedResponse (
 				RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED,
 				NULL, 0);
-#ifdef WORKAROUND_FAKE_CGEV
 		RIL_requestTimedCallback (onPDPContextListChanged, NULL, NULL);
-#endif /* WORKAROUND_FAKE_CGEV */
 	} else if (strStartsWith(s,"+CREG:")
 			|| strStartsWith(s,"+CGREG:")
 			|| strStartsWith(s,"$HTC_SYSTYPE:")
@@ -2320,10 +2330,9 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 		RIL_onUnsolicitedResponse (
 				RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED,
 				NULL, 0);
-#ifdef WORKAROUND_FAKE_CGEV
 		RIL_requestTimedCallback (onPDPContextListChanged, NULL, NULL);
-#endif /* WORKAROUND_FAKE_CGEV */
 	} else if (strStartsWith(s, "+CMT:")) {
+		LOGD("GSM_PDU=%s\n",sms_pdu);
 		if(!isgsm) {
 			char **pdu;
 			pdu=cdma_to_gsmpdu(sms_pdu);
@@ -2337,7 +2346,6 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 			RIL_onUnsolicitedResponse (
 					RIL_UNSOL_RESPONSE_NEW_SMS,
 					sms_pdu, strlen(sms_pdu));
-
 
 	} else if (strStartsWith(s, "+CDS:")) {
 		RIL_onUnsolicitedResponse (
@@ -2354,54 +2362,6 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 	} else if (strStartsWith(s, "+CME ERROR: 150")) {
 		RIL_requestTimedCallback (onPDPContextListChanged, NULL, NULL);
 #endif /* WORKAROUND_FAKE_CGEV */
-	} else if (strStartsWith(s, "$HTC_3GIND:")) {
-		//set the 3G indicator...
-
-		int ind3g = -1;
-
-		at_tok_start(&new_s);
-
-		err = at_tok_nextint(&new_s, &ind3g);
-
-		if (err != 0) {
-			LOGE("invalid 3GIND %s\n", s);
-		} else {
-			if ( ind3g > -1 && ind3g < 3 ) {
-				if ( (dataCall == 1 && ind3g == 0) || (dataCall == 0 && ind3g != 0) ){
-					if ( dataCall == 0 )
-						dataCall = 1;
-					else
-						dataCall = 0;
-					sleep(5);
-					RIL_requestTimedCallback (onPDPContextListChanged, NULL, NULL);
-					RIL_onUnsolicitedResponse (
-							RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED,
-							NULL, 0);
-				}
-			}
-		}
-	} else if (strStartsWith(s, "+PCD:")) {
-        //set the 3G indicator...
-
-        int ind3g = -1;
-
-        at_tok_start(&new_s);
-
-        err = at_tok_nextint(&new_s, &ind3g); //skip the first number, we don't know what it is
-        err = at_tok_nextint(&new_s, &ind3g);
-
-        if (err != 0) {
-            LOGE("invalid 3GIND %s\n", s);
-        } else {
-            if ( ind3g == 0 || ind3g == 1 ) {
-                dataCall = ind3g;
-                sleep(5);
-                RIL_requestTimedCallback (onPDPContextListChanged, NULL, NULL);
-                RIL_onUnsolicitedResponse (
-                    RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED,
-                    NULL, 0);
-            }
-        }
     } else if (strStartsWith(s, "$HTC_ERIIND:")) {
 		int temp;
 		char *newEri;
