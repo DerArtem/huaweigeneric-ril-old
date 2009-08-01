@@ -123,7 +123,6 @@ static void pollSIMState (void *param);
 static void setRadioState(RIL_RadioState newState);
 
 static int isgsm=0;
-static int dataCall=0;
 static char erisystem[50];
 static char *callwaiting_num;
 static int countValidCalls=0;
@@ -330,6 +329,8 @@ static void requestOrSendPDPContextList(RIL_Token *t)
 	ATLine *p_cur;
 	RIL_PDP_Context_Response *responses;
 	int err;
+	int dataCall;
+	int fd;
 	int n = 0;
 	char *out;
 
@@ -444,6 +445,12 @@ static void requestOrSendPDPContextList(RIL_Token *t)
 
 	} else {
 		//CDMA
+		if((fd=open("/etc/ppp/ppp-gprs.pid",O_RDONLY))>0)
+			dataCall=1;
+		else
+			dataCall=0;
+		close(fd);
+
 		n = 1;
 		responses = alloca(sizeof(RIL_PDP_Context_Response));
 
@@ -834,6 +841,7 @@ static void requestRegistrationState(int request, void *data,
 	int i;
 	int count = 3;
 	int fd;
+	int dataCall = 0;
 	char status[1];
 
 	response[0]=1;
@@ -1233,11 +1241,10 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 	int fd, pppstatus;
 	FILE *pppconfig;
 	size_t cur = 0;
-	size_t len;
 	ssize_t written, rlen;
 	char status[32] = {0};
 	char *buffer;
-	long buffSize;
+	long buffSize, len;
 	int retry = 10;
 
 	LOGD("requesting data connection to APN '%s'\n", apn);
