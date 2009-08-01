@@ -329,7 +329,8 @@ static void requestOrSendPDPContextList(RIL_Token *t)
 	ATLine *p_cur;
 	RIL_PDP_Context_Response *responses;
 	int err;
-	int dataCall;
+	int dataCall = 0;
+	char status[1];
 	int fd;
 	int n = 0;
 	char *out;
@@ -445,21 +446,27 @@ static void requestOrSendPDPContextList(RIL_Token *t)
 
 	} else {
 		//CDMA
-		if((fd=open("/etc/ppp/ppp-gprs.pid",O_RDONLY))>0)
-			dataCall=1;
-		else
-			dataCall=0;
-		close(fd);
-
 		n = 1;
 		responses = alloca(sizeof(RIL_PDP_Context_Response));
 
 		responses[0].cid = 1;
-		responses[0].active = dataCall;
+		responses[0].active = 0;
 		responses[0].type = "";
 		responses[0].apn = "internet";
 		responses[0].address = "";
 	}
+
+	fd = open("/smodem/live",O_RDONLY);
+	if(fd != -1) {
+		read(fd,status,1);
+		close(fd);
+		if(strcmp(status,"1"))
+			dataCall = 0;
+		else
+			dataCall = 1;
+	}
+
+	responses[0].active = dataCall;
 
 	if (t != NULL)
 		RIL_onRequestComplete(*t, RIL_E_SUCCESS, responses,
@@ -1265,7 +1272,7 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 				// Set minimum QoS params to default
 			err = at_send_command("AT+CGQMIN=1", NULL);
 				// packet-domain event reporting
-//			err = at_send_command("AT+CGEREP=1,0", NULL);
+			err = at_send_command("AT+CGEREP=1,0", NULL);
 				// Hangup anything that's happening there now
 			err = at_send_command("AT+CGACT=1,0", NULL);
 				// Start data on PDP context 1
@@ -1323,9 +1330,11 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 		free(buffer);
 
 		sleep(1);
-		pppstatus = system("/bin/pppd /dev/smd1");
-		LOGD("pppd status %d\n", pppstatus);
-		if (pppstatus > 1) goto error;
+		fd = open("/smodem/control",O_WRONLY);
+		if(fd < 0)
+			goto error;
+		write(fd, "startppp", 8);
+		close(fd);
 	}
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	at_response_free(p_response);
@@ -1800,6 +1809,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 				RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 				break;
 			}
+		case RIL_REQUEST_SEND_SMS_EXTENDED:
 		case RIL_REQUEST_SEND_SMS:
 			requestSendSMS(data, datalen, t);
 			break;
@@ -1917,8 +1927,11 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 		case RIL_REQUEST_WRITE_SMS_TO_SIM:
 			if(!isgsm) 
 				RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
-			else
+			else {
 				requestWriteSmsToSim(data, datalen, t);
+				//this doesn't make any sense, but it was there before, will see if it helps.
+				RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
+			}
 			break;
 
 		case RIL_REQUEST_DELETE_SMS_ON_SIM:
@@ -2359,7 +2372,8 @@ static void initializeCallback(void *param)
 		at_send_command("AT+HTCAGPS=5", NULL);
 		at_send_command("AT@AGPSADDRESS=193,253,42,109,7275", NULL);
 		at_send_command("AT+CGAATT=2,1,0", NULL);
-		at_send_command("AT+BANDSET=0", NULL);
+//		turning this one off for now, as it may be causing issues for some on alternate networks
+//		at_send_command("AT+BANDSET=0", NULL);
 		at_send_command("AT+CPPP=2", NULL);
 		at_send_command("AT+ODEN=112", NULL);
 		at_send_command("AT+ODEN=911", NULL);
