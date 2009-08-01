@@ -762,8 +762,17 @@ static void requestHangup(void *data, size_t datalen, RIL_Token t)
 static void requestScreenState(void *data, size_t datalen, RIL_Token t)
 {
 	int currentState = ((int *)data)[0];
-	//currentState == 1, screen on
-	//currentState == 0, screen off
+	if (currentState) { //currentState == 1, screen on
+		if(isgsm) {
+			at_send_command("AT@HTCPDPFD=0", NULL);
+			at_send_command("AT+ENCSQ=1;+CREG=2",NULL);
+		}
+	} else { //currentState == 0, screen off
+		if(isgsm) {
+			at_send_command("AT@HTCPDPFD=1", NULL);
+			at_send_command("AT+ENCSQ=0;+CREG=1",NULL);
+		}
+	}
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 }
 
@@ -1247,7 +1256,7 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 				// Set minimum QoS params to default
 			err = at_send_command("AT+CGQMIN=1", NULL);
 				// packet-domain event reporting
-			err = at_send_command("AT+CGEREP=1,0", NULL);
+//			err = at_send_command("AT+CGEREP=1,0", NULL);
 				// Hangup anything that's happening there now
 			err = at_send_command("AT+CGACT=1,0", NULL);
 				// Start data on PDP context 1
@@ -1528,17 +1537,54 @@ error:
 
 static void  requestSendUSSD(void *data, size_t datalen, RIL_Token t)
 {
+	ATResponse   *p_response = NULL;
+	int err = 0;
 	const char *ussdRequest;
+	char *cmd;
 
 	ussdRequest = (char *)(data);
-
-
-	RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
-
-	// @@@ TODO
-
+	asprintf(&cmd, "AT+CUSD=1,\"%s\",15", ussdRequest);
+	err = at_send_command(cmd, &p_response);
+	free(cmd);
+	if (err < 0 || p_response->success == 0) {
+		RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+	} else {
+		RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+	}
+	at_response_free(p_response);
 }
 
+static void  unsolocitedUSSD(const char *s)
+{
+	char *line, *p;
+	int typeCode, count, err;
+	char *message;
+	char *responseStr[2];
+
+	line = strdup(s);
+	err = at_tok_start(&line);
+	if (err < 0) goto error;
+	
+	err = at_tok_nextint(&line, &typeCode);
+	if (err < 0) goto error;
+	
+	if(at_tok_hasmore(&line)) {
+		err = at_tok_nextstr(&line, &message);
+		if (err < 0) goto error;
+		asprintf(&responseStr[1], "%s", message);
+		count = 2;
+	} else {
+		responseStr[1]=NULL;
+		count = 1;
+	}
+	free(line);
+	asprintf(&responseStr[0], "%d", typeCode);
+
+	RIL_onUnsolicitedResponse (RIL_UNSOL_ON_USSD, responseStr, count*sizeof(char*));
+	return;
+error:
+	LOGE("unexpectedUSSD error\n");
+}
 
 /*** Callback methods from the RIL library to us ***/
 
@@ -1776,7 +1822,10 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			break;
 
 		case RIL_REQUEST_SEND_USSD:
-			requestSendUSSD(data, datalen, t);
+			if(isgsm)
+				requestSendUSSD(data, datalen, t);
+			else
+				RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
 			break;
 
 		case RIL_REQUEST_CANCEL_USSD:
@@ -1792,7 +1841,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 				}
 				at_response_free(p_response);
 			} else {
-				RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+				RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
 			}
 			break;
 
@@ -2198,13 +2247,21 @@ static void initializeCallback(void *param)
 	} else {
 		/*  atchannel is tolerant of echo but it must */
 		/*  have verbose result codes */
-		at_send_command("ATE0Q0V1", NULL);
+		at_send_command("ATZE0Q0V1X3&C1&D1", NULL);
 
 		/*  No auto-answer */
 		at_send_command("ATS0=0", NULL);
 
-		/*  Extended errors */
+		/*  Extended errors and more */
+		at_send_command("AT+GTKC=2", NULL);
 		at_send_command("AT+CMEE=1", NULL);
+		at_send_command("AT+CRC=1", NULL);
+		at_send_command("AT+CR=1", NULL);
+		at_send_command("AT+FCLASS=0", NULL);
+		at_send_command("AT+CMGF=0", NULL);
+		at_send_command("AT+CSCS=\"HEX\"", NULL);
+		at_send_command("AT+CNMI=1,2,2,2,0", NULL);
+		at_send_command("AT+CPPP=1", NULL);
 
 		/*  Network registration events */
 		err = at_send_command("AT+CREG=2", &p_response);
@@ -2232,6 +2289,12 @@ static void initializeCallback(void *param)
 		/*  +CSSU unsolicited supp service notifications */
 		at_send_command("AT+CSSN=0,1", NULL);
 
+		/*  caller id = yes */
+		at_send_command("AT+CLIP=1", NULL);
+
+		/*  don't hide outgoing callerID */
+		at_send_command("AT+CLIR=0", NULL);
+
 		/*  no connected line identification */
 		at_send_command("AT+COLP=0", NULL);
 
@@ -2249,6 +2312,32 @@ static void initializeCallback(void *param)
 
 		/* No signal strengths */
 		at_send_command("AT@HTCCSQ=0", NULL);
+
+		/*  bring up the device, also resets the stack */
+		at_send_command("AT+CFUN=1", NULL);
+
+		/* More unknown commands */
+		at_send_command("AT+ENCSQ=1", NULL);
+		at_send_command("AT@HTCDIS=1;@HTCSAP=1", NULL);
+		at_send_command("AT+HTCmaskW1=262143,162161", NULL);
+		at_send_command("AT+CGEQREQ=1,4,0,0,0,0,2,0,\"0E0\",\"0E0\",3,0,0", NULL);
+		at_send_command("AT+HTCNV=1,12,6", NULL);
+		at_send_command("AT+HSDPA=1", NULL);
+		at_send_command("AT+HTCCTZR=1", NULL);
+		at_send_command("AT+HTCCNIV=0", NULL);
+		at_send_command("AT@HTCDORMANCYSET=3", NULL);
+		at_send_command("AT@HTCPDPFD=0", NULL);
+		at_send_command("AT+HTCAGPS=5", NULL);
+		at_send_command("AT@AGPSADDRESS=193,253,42,109,7275", NULL);
+		at_send_command("AT+CGAATT=2,1,0", NULL);
+		at_send_command("AT+BANDSET=0", NULL);
+		at_send_command("AT+CPPP=2", NULL);
+		at_send_command("AT+ODEN=112", NULL);
+		at_send_command("AT+ODEN=911", NULL);
+		at_send_command("AT+CSCB=1;+CSAS", NULL);
+
+		//debug what type of sim is it?
+		at_send_command("AT+SIMTYPE", NULL);
 
 #ifdef USE_TI_COMMANDS
 
@@ -2377,6 +2466,8 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 		at_tok_nextstr(&new_s, &newEri);
 		if(strlen(newEri)<50)
 			strcpy(erisystem,newEri);
+	} else if (strStartsWith(s, "+CUSD:")) {
+		unsolocitedUSSD(s);
 	}
 	//free(new_s); I'd like to free this, but for some reason it crashes. What am I missing?
 }
