@@ -1236,6 +1236,8 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 	size_t len;
 	ssize_t written, rlen;
 	char status[32] = {0};
+	char *buffer;
+	long buffSize;
 	int retry = 10;
 
 	LOGD("requesting data connection to APN '%s'\n", apn);
@@ -1287,13 +1289,33 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 		close(fd);
 		free(userpass);
 
-		pppconfig = fopen("/etc/ppp/options.smd1","a");
+		pppconfig = fopen("/etc/ppp/options.smd","r");
 		if(!pppconfig)
 			goto error;
-		fprintf(pppconfig,"\nname %s",user);
+
+		//filesize
+		fseek(pppconfig, 0, SEEK_END);
+		buffSize = ftell(pppconfig);
+		rewind(pppconfig);
+
+		//allocate memory
+		buffer = (char *) malloc (sizeof(char)*buffSize);
+		if (buffer == NULL)
+			goto error;
+
+		//read in the original file
+		len = fread (buffer,1,buffSize,pppconfig);
+		if (len != buffSize)
+			goto error;
 		fclose(pppconfig);
 
-		sleep(2);
+		pppconfig = fopen("/etc/ppp/options.smd1","w");
+		fwrite(buffer,1,buffSize,pppconfig);
+		fprintf(pppconfig,"name %s\n",user);
+		fclose(pppconfig);
+		free(buffer);
+
+		sleep(1);
 		pppstatus = system("/bin/pppd /dev/smd1");
 		LOGD("pppd status %d\n", pppstatus);
 		if (pppstatus > 1) goto error;
@@ -2374,8 +2396,6 @@ static void waitForClose()
 static void onUnsolicited (const char *s, const char *sms_pdu)
 {
 	int err;
-	char *new_s;
-	strcpy(new_s,s);
 
 	/* Ignore unsolicited responses until we're initialized.
 	 * This is OK because the RIL library will poll for initial state
@@ -2388,9 +2408,9 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 		/* TI specific -- NITZ time */
 		char *response;
 
-		at_tok_start(&new_s);
+		at_tok_start(&s);
 
-		err = at_tok_nextstr(&new_s, &response);
+		err = at_tok_nextstr(&s, &response);
 
 		if (err != 0) {
 			LOGE("invalid NITZ line %s\n", s);
@@ -2454,22 +2474,21 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
     } else if (strStartsWith(s, "$HTC_ERIIND:")) {
 		int temp;
 		char *newEri;
-		at_tok_start(&new_s);
+		at_tok_start(&s);
 
-		at_tok_nextint(&new_s, &temp);
-		at_tok_nextint(&new_s, &temp);
-		at_tok_nextint(&new_s, &temp);
-		at_tok_nextint(&new_s, &temp);
-		at_tok_nextint(&new_s, &temp);
-		at_tok_nextint(&new_s, &temp);
-		at_tok_nextint(&new_s, &temp);
-		at_tok_nextstr(&new_s, &newEri);
+		at_tok_nextint(&s, &temp);
+		at_tok_nextint(&s, &temp);
+		at_tok_nextint(&s, &temp);
+		at_tok_nextint(&s, &temp);
+		at_tok_nextint(&s, &temp);
+		at_tok_nextint(&s, &temp);
+		at_tok_nextint(&s, &temp);
+		at_tok_nextstr(&s, &newEri);
 		if(strlen(newEri)<50)
 			strcpy(erisystem,newEri);
 	} else if (strStartsWith(s, "+CUSD:")) {
 		unsolocitedUSSD(s);
 	}
-	//free(new_s); I'd like to free this, but for some reason it crashes. What am I missing?
 }
 
 /* Called on command or reader thread */
