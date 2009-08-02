@@ -840,6 +840,17 @@ int at_send_command (const char *command, ATResponse **pp_outResponse)
 }
 
 
+int at_send_command_timeout (const char *command, long long timeout, ATResponse **pp_outResponse)
+{
+    int err;
+
+    err = at_send_command_full (command, NO_RESULT, NULL,
+                                    NULL, timeout, pp_outResponse);
+
+    return err;
+}
+
+
 int at_send_command_singleline (const char *command,
                                 const char *responsePrefix,
                                  ATResponse **pp_outResponse)

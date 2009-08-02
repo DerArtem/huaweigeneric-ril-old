@@ -457,10 +457,12 @@ static void requestOrSendPDPContextList(RIL_Token *t)
 	}
 
 	fd = open("/smodem/live",O_RDONLY);
-	if(fd != -1) {
-		read(fd,status,1);
+	if(fd < 0)
+		LOGE("Couldn't open the connection up/down information\n");
+	else {
+		err = read(fd,status,1);
 		close(fd);
-		if(strcmp(status,"1"))
+		if(strncmp(status,"1",1))
 			dataCall = 0;
 		else
 			dataCall = 1;
@@ -1024,10 +1026,12 @@ static void requestRegistrationState(int request, void *data,
 		}
 	}
 	fd = open("/smodem/status",O_RDONLY);
-	if(fd != -1) {
+	if(fd < 0)
+		LOGE("Couldn't open the connection allow/disallow information\n");
+	else {
 		read(fd,status,1);
 		close(fd);
-		if(strcmp(status,"1"))
+		if(strncmp(status,"1",1))
 			dataCall = 0;
 		else
 			dataCall = 1;
@@ -1226,14 +1230,14 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 	char *response[2] = { "1", PPP_TTY_PATH };
 
 	apn = ((const char **)data)[0];
-	if (((char **)data)[1] != NULL)
-		user = ((char **)data)[1];
-	else
-		strcpy(user,"none");
-	if (((char **)data)[2] != NULL)
-		pass = ((char **)data)[2];
-	else
-		strcpy(pass,"none");
+	user = ((char **)data)[1];
+	user = strdup(user);
+	if (strlen(user)<2)
+		strcpy(user,"dummy");
+	pass = ((char **)data)[2];
+	pass = strdup(pass);
+	if (strlen(pass)<2)
+		strcpy(pass,"dummy");
 
 
 //	if (0) {//This is all handled by the external MODEM application, as ppp connections are not currently properly handled by PDP/Android
@@ -1274,7 +1278,7 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 				// packet-domain event reporting
 			err = at_send_command("AT+CGEREP=1,0", NULL);
 				// Hangup anything that's happening there now
-			err = at_send_command("AT+CGACT=1,0", NULL);
+			err = at_send_command("AT+CGACT=0,1", NULL);
 				// Start data on PDP context 1
 			err = at_send_command("ATD*99***1#", &p_response);
 			if (err < 0 || p_response->success == 0) {
@@ -1335,6 +1339,8 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		write(fd, "startppp", 8);
 		close(fd);
+		free(user);
+		free(pass);
 	}
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	at_response_free(p_response);
