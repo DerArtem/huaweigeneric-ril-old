@@ -292,12 +292,15 @@ static void onRadioPowerOn()
 /** do post- SIM ready initialization */
 static void onSIMReady()
 {
+	/* Common initialization commands */
+
+	/* Network registration */
+	at_send_command("AT+COPS=0", NULL);
+
 	if(isgsm) {
 		/* Preferred RAT - UMTS Dualmode */
-		at_send_command("AT+XRAT=1,2", NULL);
+//		at_send_command("AT+XRAT=1,2", NULL);
 
-		/* Network registration */
-		at_send_command("AT+COPS=0", NULL);
 
 		/*  Call Waiting notifications */
 		at_send_command("AT+CCWA=1", NULL);
@@ -315,11 +318,12 @@ static void onSIMReady()
 		at_send_command("AT+CMGF=0", NULL);
 
 		/* Enable NITZ reporting */
-		at_send_command("AT+CTZU=1", NULL);
-		at_send_command("AT+CTZR=1", NULL);
+//		at_send_command("AT+CTZU=1", NULL);
+//		at_send_command("AT+CTZR=1", NULL);
+		at_send_command("AT+HTCCTZR=1", NULL);
 
 		/* Enable unsolizited RSSI reporting */
-		at_send_command("AT+XMER=1", NULL);
+		at_send_command("AT@HTCCSQ=1", NULL);
 
 		at_send_command_singleline("AT+CSMS=1", "+CSMS:", NULL);
 		/*
@@ -333,8 +337,39 @@ static void onSIMReady()
 		 * bfr = 1  // flush buffer
 		 */
 		at_send_command("AT+CNMI=1,2,2,1,1", NULL);
+
+		/*  Extra stuff */
+//		at_send_command("AT+FCLASS=0", NULL);
+//		at_send_command("AT+CNMI=1,2,2,2,0", NULL);
+//		at_send_command("AT+CPPP=1", NULL);
+
+//		at_send_command("AT+ENCSQ=1", NULL);
+//		at_send_command("AT@HTCDIS=1;@HTCSAP=1", NULL);
+//		at_send_command("AT+HTCmaskW1=262143,162161", NULL);
+//		at_send_command("AT+CGEQREQ=1,4,0,0,0,0,2,0,\"0E0\",\"0E0\",3,0,0", NULL);
+//		at_send_command("AT+HTCNV=1,12,6", NULL);
+		at_send_command("AT+HSDPA=1", NULL);
+//		at_send_command("AT+HTCCNIV=0", NULL);
+//		at_send_command("AT@HTCDORMANCYSET=3", NULL);
+//		at_send_command("AT@HTCPDPFD=0", NULL);
+		at_send_command("AT+HTCAGPS=5", NULL);
+		at_send_command("AT@AGPSADDRESS=193,253,42,109,7275", NULL);
+//		at_send_command("AT+CGAATT=2,1,0", NULL);
+//		at_send_command("AT+BANDSET=0", NULL);
+//		at_send_command("AT+CPPP=2", NULL);
+		at_send_command("AT+ODEN=112", NULL);
+		at_send_command("AT+ODEN=911", NULL);
+//		at_send_command("AT+CSCB=1;+CSAS", NULL);
+
+		//debug what type of sim is it?
+		at_send_command("AT+SIMTYPE", NULL);
+
+
 	} else {
 
+		at_send_command("AT+HTC_GPSONE=4", NULL);
+		at_send_command("AT+CLVL=102", NULL);
+		at_send_command("AT+CLVL=51", NULL);
 	}
 }
 
@@ -1506,8 +1541,8 @@ static void requestRegistrationState(int request, void *data,
 	if (request == RIL_REQUEST_GPRS_REGISTRATION_STATE && dataCall == 0)
 		response[0] = 3;
 	asprintf(&responseStr[0], "%d", response[0]);
-	asprintf(&responseStr[1], "%d", response[1]);
-	asprintf(&responseStr[2], "%d", response[2]);
+	asprintf(&responseStr[1], "0x%x", response[1]);
+	asprintf(&responseStr[2], "0x%x", response[2]);
 
 	if (count > 3)
 		asprintf(&responseStr[3], "%d", response[3]);
@@ -1604,23 +1639,25 @@ error:
 static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 {
 	int err;
-	const char *smsc;
+	char smsc[30];
 	const char *pdu;
-	int tpLayerLength;
-	char *cmd1, *cmd2, *line;
+	const char *testSmsc;
+	int tpLayerLength,length,i,plus = 0;
+	char *cmd1, *cmd2, *line, *temp;
+	int tosca,curChar=0;
 	RIL_SMS_Response response;
 	ATResponse *p_response = NULL;
 	ATResponse *p2_response = NULL;
 	char * cdma=0;
 	char sendstr[512];
 
-	smsc = ((const char **)data)[0];
+	testSmsc = ((char **)data)[0];
 	pdu = ((const char **)data)[1];
 
 	tpLayerLength = strlen(pdu)/2;
-	LOGI("SMSC=%s  PDU=%s",smsc,pdu);
+	LOGI("SMSC=%s  PDU=%s",testSmsc,pdu);
 	// "NULL for default SMSC"
-	if (smsc == NULL) {
+	if (testSmsc == NULL) {
 		if(isgsm){
 			err = at_send_command_singleline("AT+CSCA?", "+CSCA:", &p2_response);
 
@@ -1633,11 +1670,34 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 			err = at_tok_start(&line);
 			if (err < 0) goto error;
 
-			err = at_tok_nextstr(&line, &smsc);
+			err = at_tok_nextstr(&line, &temp);
 			if (err < 0) goto error;
 
+			err = at_tok_nextint(&line, &tosca);
+			if (err < 0) goto error;
+
+			if(temp[0]=='+')
+				plus = 1;
+
+			length = strlen(temp) - plus;
+			sprintf(smsc,"%.2x%.2x",(length + 1) / 2 + 1, tosca);
+
+			for (i = 0; curChar < length - 1; i+=2 ) {
+				smsc[5+i] = temp[plus+curChar++];
+				smsc[4+i] = temp[plus+curChar++];
+			}
+
+			if ( length % 2) {//One extra number
+				smsc[4+length] = temp[curChar];
+				smsc[3+length]='F';
+				smsc[5+length]='\0';
+			} else {
+				smsc[3+length] = '\0';
+			}
 		}
 	}
+	else
+		strcpy(smsc,testSmsc);
 	LOGI("SMSC=%s  PDU=%s",smsc,pdu);
 
 	if(!isgsm) {
@@ -1657,6 +1717,7 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 
 	free(cmd1);
 	free(cmd2);
+//	free(smsc);
 
 	if (err != 0 || p_response->success == 0) goto error;
 
@@ -2014,7 +2075,7 @@ static void unsolicitedNitzTime(const char * s)
 	 *  08/10/28,19:08:37-20,1 (yy/mm/dd,hh:mm:ss(+/-)tz,dst)
 	 */
 
-	if(strStartsWith(s,"+CTZV:") || strStartsWith(s, "+HTCCTZV:")){
+	if(strStartsWith(s,"+CTZV:")){
 
 		/* Get Time and Timezone data and store in static variable.
 		 * Wait until DST is received to send response to upper layers
@@ -2047,9 +2108,15 @@ static void unsolicitedNitzTime(const char * s)
 		free(response);
 		return;
 
-	}else
-	{
-		goto error;
+	}
+	else if(strStartsWith(s, "+HTCCTZV:")){
+		at_tok_start(&line);
+
+		err = at_tok_nextstr(&line, &response);
+		if (err < 0) goto error;
+		RIL_onUnsolicitedResponse(RIL_UNSOL_NITZ_TIME_RECEIVED, response, strlen(response));
+		return;
+
 	}
 
 error:
@@ -3122,9 +3189,111 @@ error:
 	free(optInfo);
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
+/*
+static void requestNeighboringCellIds(void * data, size_t datalen, RIL_Token t) {
+	int err;
+	int response[4];
+	char * responseStr[4];
+	ATResponse *p_response = NULL;
+	char *line, *p;
+	int commas;
+	int skip;
+	int i;
+	int count = 3;
+
+	RIL_NeighboringCell **pp_cellIds;
+	RIL_NeighboringCell *p_cellIds;
+
+	pp_cellIds = (RIL_NeighboringCell **)alloca(sizeof(RIL_NeighboringCell *));
+	p_cellIds = (RIL_NeighboringCell *)alloca(sizeof(RIL_NeighboringCell));
+	pp_cellIds[0]=p_cellIds;
+
+	err = 1;
+	for (i=0;i<4 && err != 0;i++)
+		err = at_send_command_singleline("AT+CREG?", "+CREG:", &p_response);
+
+	if (err != 0) goto error;
+
+	line = p_response->p_intermediates->line;
+
+	err = at_tok_start(&line);
+	if (err < 0) goto error;
+*/	/* Ok you have to be careful here
+	 * The solicited version of the CREG response is
+	 * +CREG: n, stat, [lac, cid]
+	 * and the unsolicited version is
+	 * +CREG: stat, [lac, cid]
+	 * The <n> parameter is basically "is unsolicited creg on?"
+	 * which it should always be
+	 *
+	 * Now we should normally get the solicited version here,
+	 * but the unsolicited version could have snuck in
+	 * so we have to handle both
+	 *
+	 * Also since the LAC and CID are only reported when registered,
+	 * we can have 1, 2, 3, or 4 arguments here
+	 * 
+	 * finally, a +CGREG: answer may have a fifth value that corresponds
+	 * to the network type, as in;
+	 *
+	 *   +CGREG: n, stat [,lac, cid [,networkType]]
+	 */
+
+	/* count number of commas */
+/*	commas = 0;
+	for (p = line ; *p != '\0' ;p++) {
+		if (*p == ',') commas++;
+	}
+	switch (commas) {
+*///		case 0: /* +CREG: <stat> */
+//		case 1: /* +CREG: <n>, <stat> */
+/*			goto error;
+			break;
+*/
+//		case 2: /* +CREG: <stat>, <lac>, <cid> */
+/*			err = at_tok_nextint(&line, &response[0]);
+			if (err < 0) goto error;
+			err = at_tok_nexthexint(&line, &response[1]);
+			if (err < 0) goto error;
+			err = at_tok_nextstr(&line, &p_cellIds[0].cid);
+			if (err < 0) goto error;
+			break;
+*///		case 3: /* +CREG: <n>, <stat>, <lac>, <cid> */
+/*			err = at_tok_nextint(&line, &skip);
+			if (err < 0) goto error;
+			err = at_tok_nextint(&line, &response[0]);
+			if (err < 0) goto error;
+			err = at_tok_nexthexint(&line, &response[1]);
+			if (err < 0) goto error;
+			err = at_tok_nextstr(&line, &p_cellIds[0].cid);
+			if (err < 0) goto error;
+			break;
+*///		case 4: /* +CGREG: <n>, <stat>, <lac>, <cid>, <networkType> */
+/*			err = at_tok_nextint(&line, &skip);
+			if (err < 0) goto error;
+			err = at_tok_nextint(&line, &response[0]);
+			if (err < 0) goto error;
+			err = at_tok_nexthexint(&line, &response[1]);
+			if (err < 0) goto error;
+			err = at_tok_nextstr(&line, &p_cellIds[0].cid);
+			if (err < 0) goto error;
+			err = at_tok_nexthexint(&line, &response[3]);
+			if (err < 0) goto error;
+			count = 4;
+			break;
+		default:
+			goto error;
+	}
+
+	RIL_onRequestComplete(t, RIL_E_SUCCESS, pp_cellIds, sizeof(pp_cellIds));
 
 
-
+	free(cellIds);
+error:
+	free(cellIds);
+	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+}
+*/
 
 /*** Callback methods from the RIL library to us ***/
 
@@ -3695,139 +3864,75 @@ static void initializeCallback(void *param)
 
 	at_handshake();
 
+	strcpy(erisystem,"Android");
+
 	/* note: we don't check errors here. Everything important will
 	   be handled in onATTimeout and onATReaderClosed */
 
-	if(!isgsm) {
-		strcpy(erisystem,"Android");
-		/*  atchannel is tolerant of echo but it must */
-		/*  have verbose result codes */
-		at_send_command("ATV1", NULL);
-		/*  echo off */
-		at_send_command("ATE0", NULL);
-		/*  No auto-answer */
-		at_send_command("ATS0=0", NULL);
-		/*  send results */
-		at_send_command("ATQ0", NULL);
-		/*  check for busy, don't check for dialone */
-		at_send_command("ATX3", NULL);
-		/*  set DCD depending on service */
-		at_send_command("AT&C1", NULL);
-		/*  set DTR according to service */
-		at_send_command("AT&D1", NULL);
-		/*  Extended errors, detailed rings, unknown, modulate data, no mute */
-		at_send_command("AT+CMEE=1;+CRC=1;+CR=1;+CMOD=0;+CMUT=0", NULL);
-		at_send_command("AT", NULL);
-		/*  bring up the device, also resets the stack */
-		at_send_command("AT+CFUN=1", NULL);
-		/*  Not muted */
-		at_send_command("AT+CMUT=0", NULL);
-		/*  caller id = yes */
-		at_send_command("AT+CLIP=1", NULL);
-		/*  don't hide outgoing callerID */
-		at_send_command("AT+CLIR=0", NULL);
-		at_send_command("AT", NULL);
+	/* Common initialization strings */
 
-		at_send_command("AT+COPS=0", NULL);
-		at_send_command("AT+HTC_GPSONE=4", NULL);
-		at_send_command("AT+CLVL=102", NULL);
-		at_send_command("AT+CLVL=51", NULL);
+	/*  atchannel is tolerant of echo but it must */
+	/*  reset and have verbose result codes */
+	at_send_command("ATZV1", NULL);
 
-	} else {
-		/*  atchannel is tolerant of echo but it must */
-		/*  have verbose result codes */
-		at_send_command("ATE0Q0V1", NULL);
-		//at_send_command("ATZE0Q0V1X3&C1&D1", NULL);
+	/*  echo off */
+	at_send_command("ATE0", NULL);
 
-		/*  No auto-answer */
-		at_send_command("ATS0=0", NULL);
+	/*  No auto-answer */
+	at_send_command("ATS0=0", NULL);
 
-		/*  Extended errors */
-		at_send_command("AT+CMEE=1", NULL);
+	/*  send results */
+	at_send_command("ATQ0", NULL);
+
+	/*  check for busy, don't check for dialone */
+	at_send_command("ATX3", NULL);
+
+	/*  set DCD depending on service */
+	at_send_command("AT&C1", NULL);
+
+	/*  set DTR according to service */
+	at_send_command("AT&D1", NULL);
+
+	/*  Extended errors */
+	at_send_command("AT+CMEE=1", NULL);
+
+	/*  Alternating voice/data off */
+	at_send_command("AT+CMOD=0", NULL);
+
+	/*  Not muted */
+	at_send_command("AT+CMUT=0", NULL);
+
+	/*  detailed rings, unknown */
+	at_send_command("AT+CRC=1;+CR=1", NULL);
+
+	/*  caller id = yes */
+	at_send_command("AT+CLIP=1", NULL);
+
+	/*  don't hide outgoing callerID */
+	at_send_command("AT+CLIR=0", NULL);
+
+	/*  bring up the device, also resets the stack */
+	at_send_command("AT+CFUN=1", NULL);
+
+	if(isgsm) {
 
 		/*  Network registration events */
 		err = at_send_command("AT+CREG=2", &p_response);
 
 		/* some handsets -- in tethered mode -- don't support CREG=2 */
-		if (err < 0 || p_response->success == 0) {
+		if (err < 0 || p_response->success == 0)
 			at_send_command("AT+CREG=1", NULL);
-		}
 
 		at_response_free(p_response);
 
 		/*  GPRS registration events */
 		at_send_command("AT+CGREG=2", NULL);
 
-		/*  Alternating voice/data off */
-		at_send_command("AT+CMOD=0", NULL);
-
-		/*  Not muted */
-		at_send_command("AT+CMUT=0", NULL);
-
 		/*  +CSSU unsolicited supp service notifications */
 		at_send_command("AT+CSSN=0,1", NULL);
 
-		/*  Extra stuff */
-//		at_send_command("AT+CRC=1", NULL);
-//		at_send_command("AT+CR=1", NULL);
-//		at_send_command("AT+FCLASS=0", NULL);
-//		at_send_command("AT+CMGF=0", NULL);
-//		at_send_command("AT+CNMI=1,2,2,2,0", NULL);
-//		at_send_command("AT+CPPP=1", NULL);
-
-		/*  Call Waiting notifications */
-		at_send_command("AT+CCWA=1", NULL);
-
-		/*  caller id = yes */
-		at_send_command("AT+CLIP=1", NULL);
-
-		/*  don't hide outgoing callerID */
-		at_send_command("AT+CLIR=0", NULL);
-
-		/*  no connected line identification */
-		at_send_command("AT+COLP=0", NULL);
-
 		/*  HEX character set */
 		at_send_command("AT+CSCS=\"HEX\"", NULL);
-
-		/*  USSD unsolicited */
-		at_send_command("AT+CUSD=1", NULL);
-
-		/*  Enable +CGEV GPRS event notifications, but don't buffer */
-		at_send_command("AT+CGEREP=1,0", NULL);
-
-		/*  SMS PDU mode */
-		at_send_command("AT+CMGF=0", NULL);
-
-		/* Unsolicited Signal Strength */
-		at_send_command("AT@HTCCSQ=1", NULL);
-
-		/*  bring up the device, also resets the stack */
-		at_send_command("AT+CFUN=1", NULL);
-
-		/* More unknown commands */
-//		at_send_command("AT+ENCSQ=1", NULL);
-//		at_send_command("AT@HTCDIS=1;@HTCSAP=1", NULL);
-//		at_send_command("AT+HTCmaskW1=262143,162161", NULL);
-//		at_send_command("AT+CGEQREQ=1,4,0,0,0,0,2,0,\"0E0\",\"0E0\",3,0,0", NULL);
-//		at_send_command("AT+HTCNV=1,12,6", NULL);
-		at_send_command("AT+HSDPA=1", NULL);
-//		at_send_command("AT+HTCCTZR=1", NULL);
-//		at_send_command("AT+HTCCNIV=0", NULL);
-//		at_send_command("AT@HTCDORMANCYSET=3", NULL);
-//		at_send_command("AT@HTCPDPFD=0", NULL);
-		at_send_command("AT+HTCAGPS=5", NULL);
-		at_send_command("AT@AGPSADDRESS=193,253,42,109,7275", NULL);
-//		at_send_command("AT+CGAATT=2,1,0", NULL);
-//		at_send_command("AT+BANDSET=0", NULL);
-//		at_send_command("AT+CPPP=2", NULL);
-//		at_send_command("AT+ODEN=112", NULL);
-//		at_send_command("AT+ODEN=911", NULL);
-//		at_send_command("AT+CSCB=1;+CSAS", NULL);
-
-		//debug what type of sim is it?
-		at_send_command("AT+SIMTYPE", NULL);
-
 	}
 	/* assume radio is off on error */
 	if (isRadioOn() > 0) {
