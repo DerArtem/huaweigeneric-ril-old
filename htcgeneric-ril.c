@@ -1541,8 +1541,8 @@ static void requestRegistrationState(int request, void *data,
 	if (request == RIL_REQUEST_GPRS_REGISTRATION_STATE && dataCall == 0)
 		response[0] = 3;
 	asprintf(&responseStr[0], "%d", response[0]);
-	asprintf(&responseStr[1], "0x%x", response[1]);
-	asprintf(&responseStr[2], "0x%x", response[2]);
+	asprintf(&responseStr[1], "%d", response[1]);
+	asprintf(&responseStr[2], "%d", response[2]);
 
 	if (count > 3)
 		asprintf(&responseStr[3], "%d", response[3]);
