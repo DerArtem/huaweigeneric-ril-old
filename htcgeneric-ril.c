@@ -339,27 +339,27 @@ static void onSIMReady()
 		at_send_command("AT+CNMI=1,2,2,1,1", NULL);
 
 		/*  Extra stuff */
-//		at_send_command("AT+FCLASS=0", NULL);
+		at_send_command("AT+FCLASS=0", NULL);
 //		at_send_command("AT+CNMI=1,2,2,2,0", NULL);
-//		at_send_command("AT+CPPP=1", NULL);
+		at_send_command("AT+CPPP=1", NULL);
 
-//		at_send_command("AT+ENCSQ=1", NULL);
-//		at_send_command("AT@HTCDIS=1;@HTCSAP=1", NULL);
-//		at_send_command("AT+HTCmaskW1=262143,162161", NULL);
-//		at_send_command("AT+CGEQREQ=1,4,0,0,0,0,2,0,\"0E0\",\"0E0\",3,0,0", NULL);
-//		at_send_command("AT+HTCNV=1,12,6", NULL);
+		at_send_command("AT+ENCSQ=1", NULL);
+		at_send_command("AT@HTCDIS=1;@HTCSAP=1", NULL);
+		at_send_command("AT+HTCmaskW1=262143,162161", NULL);
+		at_send_command("AT+CGEQREQ=1,4,0,0,0,0,2,0,\"0E0\",\"0E0\",3,0,0", NULL);
+		at_send_command("AT+HTCNV=1,12,6", NULL);
 		at_send_command("AT+HSDPA=1", NULL);
-//		at_send_command("AT+HTCCNIV=0", NULL);
-//		at_send_command("AT@HTCDORMANCYSET=3", NULL);
-//		at_send_command("AT@HTCPDPFD=0", NULL);
+		at_send_command("AT+HTCCNIV=0", NULL);
+		at_send_command("AT@HTCDORMANCYSET=3", NULL);
+		at_send_command("AT@HTCPDPFD=0", NULL);
 		at_send_command("AT+HTCAGPS=5", NULL);
 		at_send_command("AT@AGPSADDRESS=193,253,42,109,7275", NULL);
-//		at_send_command("AT+CGAATT=2,1,0", NULL);
+		at_send_command("AT+CGAATT=2,1,0", NULL);
 //		at_send_command("AT+BANDSET=0", NULL);
-//		at_send_command("AT+CPPP=2", NULL);
+		at_send_command("AT+CPPP=2", NULL);
 		at_send_command("AT+ODEN=112", NULL);
 		at_send_command("AT+ODEN=911", NULL);
-//		at_send_command("AT+CSCB=1;+CSAS", NULL);
+		at_send_command("AT+CSCB=1", NULL);
 
 		//debug what type of sim is it?
 		at_send_command("AT+SIMTYPE", NULL);
@@ -3009,7 +3009,6 @@ static void requestDeleteSMSOnSIM(void * data, size_t datalen, RIL_Token t)
 		asprintf(&cmd, "AT+CMGD=%d", ((int *)data)[0]);
 
 		err = at_send_command(cmd, &p_response);
-		free(cmd);
 		if (err < 0 || p_response->success == 0){
 			RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 		} else {
