@@ -40,6 +40,8 @@
 
 #define MAX_AT_RESPONSE 0x1000
 
+#define RIL_REQUEST_SEND_SMS_EXTENDED 512
+
 /* pathname returned from RIL_REQUEST_SETUP_DEFAULT_PDP */
 #define PPP_TTY_PATH "ppp0"
 
@@ -3432,7 +3434,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			requestDtmfStart(data, datalen, t);
 			break;
 
-//		case RIL_REQUEST_SEND_SMS_EXTENDED:
+		case RIL_REQUEST_SEND_SMS_EXTENDED:
 		case RIL_REQUEST_SEND_SMS:
 			requestSendSMS(data, datalen, t);
 			break;
