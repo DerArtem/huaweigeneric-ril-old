@@ -968,7 +968,7 @@ int
 gsm_bcdnum_from_ascii( cbytes_t  ascii, int  asciilen, bytes_t  dst )
 {
     cbytes_t  end = ascii + asciilen;
-    int  result;
+    int  result = 0;
     int  phase = 0x01;
 
     while (ascii < end) {

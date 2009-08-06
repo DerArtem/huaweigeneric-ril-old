@@ -256,6 +256,11 @@ char *gsm_to_cdmapdu(char *msg) {
 		smspdu_get_sender_address(pdu,&smsaddr);
 	}
 	sms_address_to_str(&smsaddr,to,256);
+	if(to[0]=='+') { // convert + to 00 otherwise international sms doesn't work
+		memmove(to+1,to,255);
+		to[0]='0';
+		to[1]='0';
+	}
 	int length=smspdu_get_text_message(pdu, message, 256);
 	message[length]=0;
 	smspdu_free(pdu);

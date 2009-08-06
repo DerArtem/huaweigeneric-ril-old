@@ -3432,7 +3432,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			requestDtmfStart(data, datalen, t);
 			break;
 
-		case RIL_REQUEST_SEND_SMS_EXTENDED:
+//		case RIL_REQUEST_SEND_SMS_EXTENDED:
 		case RIL_REQUEST_SEND_SMS:
 			requestSendSMS(data, datalen, t);
 			break;
