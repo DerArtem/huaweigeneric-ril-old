@@ -287,7 +287,20 @@ static void onRadioPowerOn()
 	/*  TI specific -- enable NITZ unsol notifs */
 	at_send_command("AT%CTZV=1", NULL);
 #endif
-
+	if(isgsm)
+	{
+		at_send_command("ATE0", NULL);
+		at_send_command("AT+CLIP=1", NULL);
+		at_send_command("AT+CLIR=0", NULL);
+		at_send_command("AT+CPPP=2", NULL);
+		at_send_command("AT+HTCNV=1,12,6", NULL);
+		at_send_command("AT+HSDPA=1", NULL);
+		at_send_command("AT+HTCAGPS=5", NULL);
+		at_send_command("AT", NULL);
+		at_send_command("AT+ODEN=112", NULL);
+		at_send_command("AT+ODEN=911", NULL);
+		at_send_command("AT+ALS=4294967295", NULL);
+	}
 	pollSIMState(NULL);
 }
 
@@ -303,31 +316,9 @@ static void onSIMReady()
 		/* Preferred RAT - UMTS Dualmode */
 //		at_send_command("AT+XRAT=1,2", NULL);
 
+		//debug what type of sim is it?
+		at_send_command("AT+SIMTYPE", NULL);
 
-		/*  Call Waiting notifications */
-		at_send_command("AT+CCWA=1", NULL);
-
-		/*  No connected line identification */
-		at_send_command("AT+COLP=0", NULL);
-
-		/*  USSD unsolicited */
-		at_send_command("AT+CUSD=1", NULL);
-
-		/*  Enable +CGEV GPRS event notifications, but don't buffer */
-		at_send_command("AT+CGEREP=1,0", NULL);
-
-		/*  SMS PDU mode */
-		at_send_command("AT+CMGF=0", NULL);
-
-		/* Enable NITZ reporting */
-//		at_send_command("AT+CTZU=1", NULL);
-//		at_send_command("AT+CTZR=1", NULL);
-		at_send_command("AT+HTCCTZR=1", NULL);
-
-		/* Enable unsolizited RSSI reporting */
-		at_send_command("AT@HTCCSQ=1", NULL);
-
-		at_send_command_singleline("AT+CSMS=1", "+CSMS:", NULL);
 		/*
 		 * Always send SMS messages directly to the TE
 		 *
@@ -340,31 +331,20 @@ static void onSIMReady()
 		 */
 		at_send_command("AT+CNMI=1,2,2,1,1", NULL);
 
-		/*  Extra stuff */
-		at_send_command("AT+FCLASS=0", NULL);
-//		at_send_command("AT+CNMI=1,2,2,2,0", NULL);
-		at_send_command("AT+CPPP=1", NULL);
-
-		at_send_command("AT+ENCSQ=1", NULL);
-		at_send_command("AT@HTCDIS=1;@HTCSAP=1", NULL);
-		at_send_command("AT+HTCmaskW1=262143,162161", NULL);
-		at_send_command("AT+CGEQREQ=1,4,0,0,0,0,2,0,\"0E0\",\"0E0\",3,0,0", NULL);
-		at_send_command("AT+HTCNV=1,12,6", NULL);
-		at_send_command("AT+HSDPA=1", NULL);
-		at_send_command("AT+HTCCNIV=0", NULL);
-		at_send_command("AT@HTCDORMANCYSET=3", NULL);
-		at_send_command("AT@HTCPDPFD=0", NULL);
-		at_send_command("AT+HTCAGPS=5", NULL);
-		at_send_command("AT@AGPSADDRESS=193,253,42,109,7275", NULL);
-		at_send_command("AT+CGAATT=2,1,0", NULL);
-//		at_send_command("AT+BANDSET=0", NULL);
-		at_send_command("AT+CPPP=2", NULL);
-		at_send_command("AT+ODEN=112", NULL);
-		at_send_command("AT+ODEN=911", NULL);
 		at_send_command("AT+CSCB=1", NULL);
 
-		//debug what type of sim is it?
-		at_send_command("AT+SIMTYPE", NULL);
+		/*  Enable +CGEV GPRS event notifications, but don't buffer */
+//		at_send_command("AT+CGEREP=1,0", NULL);
+
+		/* Enable NITZ reporting */
+//		at_send_command("AT+CTZU=1", NULL);
+//		at_send_command("AT+CTZR=1", NULL);
+		at_send_command("AT+HTCCTZR=1", NULL);
+
+		/* Enable unsolizited RSSI reporting */
+		at_send_command("AT@HTCCSQ=1", NULL);
+
+		at_send_command_singleline("AT+CSMS=1", "+CSMS:", NULL);
 
 
 	} else {
@@ -3912,10 +3892,36 @@ static void initializeCallback(void *param)
 	/*  don't hide outgoing callerID */
 	at_send_command("AT+CLIR=0", NULL);
 
-	/*  bring up the device, also resets the stack */
-	at_send_command("AT+CFUN=1", NULL);
+	/*  bring up the device, also resets the stack. Don't do this! Handled elsewhere */
+//	at_send_command("AT+CFUN=1", NULL);
 
 	if(isgsm) {
+		/*  Call Waiting notifications */
+		at_send_command("AT+CCWA=1", NULL);
+
+		/*  No connected line identification */
+		at_send_command("AT+COLP=0", NULL);
+
+		/*  USSD unsolicited */
+		at_send_command("AT+CUSD=1", NULL);
+
+		/*  SMS PDU mode */
+		at_send_command("AT+CMGF=0", NULL);
+
+		at_send_command("AT+GTKC=2", NULL);
+
+		/*  +CSSU unsolicited supp service notifications */
+		at_send_command("AT+CSSN=0,1", NULL);
+
+		/*  HEX character set */
+		at_send_command("AT+CSCS=\"HEX\"", NULL);
+
+		/*  Extra stuff */
+		at_send_command("AT+FCLASS=0", NULL);
+
+//		at_send_command("AT+CNMI=1,2,2,2,0", NULL);
+		at_send_command("AT+CPPP=1", NULL);
+
 
 		/*  Network registration events */
 		err = at_send_command("AT+CREG=2", &p_response);
@@ -3929,11 +3935,23 @@ static void initializeCallback(void *param)
 		/*  GPRS registration events */
 		at_send_command("AT+CGREG=2", NULL);
 
-		/*  +CSSU unsolicited supp service notifications */
-		at_send_command("AT+CSSN=0,1", NULL);
+		at_send_command("AT+ENCSQ=1", NULL);
+		at_send_command("AT@HTCDIS=1;@HTCSAP=1", NULL);
+		at_send_command("AT+HTCmaskW1=262143,162161", NULL);
+		at_send_command("AT+CGEQREQ=1,4,0,0,0,0,2,0,\"0E0\",\"0E0\",3,0,0", NULL);
+		at_send_command("AT+HTCNV=1,12,6", NULL);
+		at_send_command("AT+HSDPA=1", NULL);
+		at_send_command("AT+HTCCNIV=0", NULL);
+		at_send_command("AT@HTCDORMANCYSET=3", NULL);
+		at_send_command("AT@HTCPDPFD=0", NULL);
+		at_send_command("AT+HTCAGPS=5", NULL);
+		at_send_command("AT@AGPSADDRESS=193,253,42,109,7275", NULL);
+		at_send_command("AT",NULL);
+		at_send_command("AT+CGAATT=2,1,0", NULL);
+//		at_send_command("AT+BANDSET=0", NULL);
+		at_send_command("AT+GTKC=2", NULL);
 
-		/*  HEX character set */
-		at_send_command("AT+CSCS=\"HEX\"", NULL);
+
 	}
 	/* assume radio is off on error */
 	if (isRadioOn() > 0) {
