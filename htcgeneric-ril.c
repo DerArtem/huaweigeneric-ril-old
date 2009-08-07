@@ -29,6 +29,7 @@
 #include "atchannel.h"
 #include "at_tok.h"
 #include "misc.h"
+#include "gsm.h"
 #include <getopt.h>
 #include <sys/socket.h>
 #include <cutils/sockets.h>
@@ -294,12 +295,15 @@ static void onRadioPowerOn()
 		at_send_command("AT+CLIR=0", NULL);
 		at_send_command("AT+CPPP=2", NULL);
 		at_send_command("AT+HTCNV=1,12,6", NULL);
-		at_send_command("AT+HSDPA=1", NULL);
+
+		/*enable ENS mode, okay to fail */
+//		at_send_command("AT+HTCENS=1", NULL);
+//		at_send_command("AT+HSDPA=1", NULL);
 		at_send_command("AT+HTCAGPS=5", NULL);
 		at_send_command("AT", NULL);
 		at_send_command("AT+ODEN=112", NULL);
 		at_send_command("AT+ODEN=911", NULL);
-		at_send_command("AT+ALS=4294967295", NULL);
+//		at_send_command("AT+ALS=4294967295", NULL);
 	}
 	pollSIMState(NULL);
 }
@@ -679,6 +683,11 @@ static void requestQueryAvailableNetworks(void *data, size_t datalen, RIL_Token 
 	{
 		err = at_tok_nextstr(&line, &c_skip);
 		if (err < 0) goto error;
+		if (strcmp(c_skip,"") == 0)
+		{
+			operators = i;
+			continue;
+		}
 		status = atoi(&c_skip[1]);
 		response[i*4+3] = (char*)networkStatusToRilString(status);
 
@@ -1626,6 +1635,7 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 	const char *testSmsc;
 	int tpLayerLength,length,i,plus = 0;
 	char *cmd1, *cmd2, *line, *temp;
+//	bytes_t first;
 	int tosca,curChar=0;
 	RIL_SMS_Response response;
 	ATResponse *p_response = NULL;
@@ -1676,6 +1686,10 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 			} else {
 				smsc[4+length] = '\0';
 			}
+			//first = malloc(30*sizeof(byte_t));
+			//length = 2 + (gsm_bcdnum_from_ascii(temp,strlen(temp),&first)) / 2;
+			//sprintf(smsc,"%.2x%.2x%s",length,tosca,first);
+			//free(first);
 		}
 	}
 	else
@@ -2381,15 +2395,21 @@ static void requestSendUSSD(void *data, size_t datalen, RIL_Token t)
 {
 	ATResponse *p_response = NULL;
 	int err = 0;
-	const char *ussdRequest;
+	cbytes_t ussdRequest;
+	bytes_t gsm7Request;
 	char *cmd;
 	if(isgsm) {
-		ussdRequest = (char *)(data);
-		asprintf(&cmd, "AT+CUSD=1,\"%s\",15", ussdRequest);
+		ussdRequest = (cbytes_t)(data);
+
+		//encode USSD request
+		//23 = #, 39=9
+		err = utf8_to_gsm7(ussdRequest, strlen((char *)data),gsm7Request,0);
+		if (err <= 0) goto error;
+		asprintf(&cmd, "AT+CUSD=1,\"%s\",15", gsm7Request);
 		err = at_send_command(cmd, &p_response);
 		free(cmd);
 		if (err < 0 || p_response->success == 0) {
-			RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+			goto error;
 		} else {
 			RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 		}
@@ -2397,6 +2417,10 @@ static void requestSendUSSD(void *data, size_t datalen, RIL_Token t)
 	} else {
 		RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
 	}
+	return;
+
+error:
+	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
 static void  unsolicitedUSSD(const char *s)
@@ -2406,17 +2430,22 @@ static void  unsolicitedUSSD(const char *s)
 	char *message;
 	char *responseStr[2];
 
+LOGD("Got a USSD message");
+
 	line = strdup(s);
 	err = at_tok_start(&line);
 	if(err < 0) goto error;
 
 	err = at_tok_nextint(&line, &typeCode);
 	if(err < 0) goto error;
+LOGD("USSD type %d",typeCode);
 
 	if(at_tok_hasmore(&line)) {
 		err = at_tok_nextstr(&line, &message);
 		if(err < 0) goto error;
 		asprintf(&responseStr[1], "%s", message);
+LOGD("USSD message %s",message);
+
 		count = 2;
 	} else {
 		responseStr[1]=NULL;
@@ -3841,9 +3870,17 @@ static void initializeCallback(void *param)
 	ATResponse *p_response = NULL;
 	int err;
 
+	at_handshake();
+
+	/* make sure the radio is off */
+	if(isgsm)
+		at_send_command("AT+CFUN=0", NULL);
+	else
+		at_send_command("AT+CFUN=66", NULL);
+
+
 	setRadioState (RADIO_STATE_OFF);
 
-	at_handshake();
 
 	strcpy(erisystem,"Android");
 
@@ -3940,14 +3977,15 @@ static void initializeCallback(void *param)
 		at_send_command("AT+HTCmaskW1=262143,162161", NULL);
 		at_send_command("AT+CGEQREQ=1,4,0,0,0,0,2,0,\"0E0\",\"0E0\",3,0,0", NULL);
 		at_send_command("AT+HTCNV=1,12,6", NULL);
-		at_send_command("AT+HSDPA=1", NULL);
+//		at_send_command("AT+HSDPA=1", NULL);
 		at_send_command("AT+HTCCNIV=0", NULL);
-		at_send_command("AT@HTCDORMANCYSET=3", NULL);
+//		at_send_command("AT@HTCDORMANCYSET=3", NULL);
 		at_send_command("AT@HTCPDPFD=0", NULL);
 		at_send_command("AT+HTCAGPS=5", NULL);
 		at_send_command("AT@AGPSADDRESS=193,253,42,109,7275", NULL);
 		at_send_command("AT",NULL);
-		at_send_command("AT+CGAATT=2,1,0", NULL);
+		/* auto connect/disconnect settings */
+//		at_send_command("AT+CGAATT=2,1,0", NULL);
 //		at_send_command("AT+BANDSET=0", NULL);
 		at_send_command("AT+GTKC=2", NULL);
 
