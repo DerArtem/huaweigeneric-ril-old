@@ -1674,7 +1674,7 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 				smsc[3+length]='F';
 				smsc[5+length]='\0';
 			} else {
-				smsc[3+length] = '\0';
+				smsc[4+length] = '\0';
 			}
 		}
 	}
