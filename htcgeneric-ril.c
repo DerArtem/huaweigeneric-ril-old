@@ -557,7 +557,13 @@ static void requestOrSendPDPContextList(RIL_Token *t)
 			dataCall = 1;
 	}
 
-	responses[0].active = dataCall;
+	if(isgsm)
+	{
+		if(responses[0].active == 1)
+			responses[0].active = dataCall;
+	}
+	else
+		responses[0].active = dataCall;
 
 	if (t != NULL)
 		RIL_onRequestComplete(*t, RIL_E_SUCCESS, responses,
@@ -1753,13 +1759,20 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 
 	apn = ((const char **)data)[0];
 	user = ((char **)data)[1];
-	user = strdup(user);
-	if (strlen(user)<2)
-		strcpy(user,"dummy");
+	if(user != NULL)
+	{
+		if (strlen(user)<2)
+			user = "dummy";
+	} else
+		user = "dummy";
+
 	pass = ((char **)data)[2];
-	pass = strdup(pass);
-	if (strlen(pass)<2)
-		strcpy(pass,"dummy");
+	if(pass != NULL)
+	{
+		if (strlen(pass)<2)
+			pass = "dummy";
+	} else
+		pass = "dummy";
 
 	LOGD("requesting data connection to APN '%s'\n", apn);
 
@@ -1842,8 +1855,6 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		write(fd, "startppp", 8);
 		close(fd);
-		free(user);
-		free(pass);
 	}
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
@@ -1861,6 +1872,7 @@ static void requestDeactivateDefaultPDP(void *data, size_t datalen, RIL_Token t)
 	int err;
 	char * cmd;
 	char * cid;
+	int fd;
 	ATResponse *p_response = NULL;
 
 	cid = ((char **)data)[0];
@@ -1872,6 +1884,11 @@ static void requestDeactivateDefaultPDP(void *data, size_t datalen, RIL_Token t)
 
 		if (err < 0 || p_response->success == 0) {
 			goto error;
+		fd = open("/smodem/control",O_WRONLY);
+		if(fd < 0)
+			goto error;
+		write(fd, "killppp", 8);
+		close(fd);
 		}
 	} else {
 		RIL_onRequestComplete(t,RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
@@ -2395,17 +2412,22 @@ static void requestSendUSSD(void *data, size_t datalen, RIL_Token t)
 {
 	ATResponse *p_response = NULL;
 	int err = 0;
+	int len;
 	cbytes_t ussdRequest;
-	bytes_t gsm7Request;
 	char *cmd;
+	bytes_t temp;
+	char *newUSSDRequest;
 	if(isgsm) {
 		ussdRequest = (cbytes_t)(data);
-
-		//encode USSD request
-		//23 = #, 39=9
-		err = utf8_to_gsm7(ussdRequest, strlen((char *)data),gsm7Request,0);
-		if (err <= 0) goto error;
-		asprintf(&cmd, "AT+CUSD=1,\"%s\",15", gsm7Request);
+		temp = malloc(strlen((char *)ussdRequest)*sizeof(char));
+		len = utf8_to_gsm8(ussdRequest,strlen((char *)ussdRequest),temp);
+		newUSSDRequest = malloc(2*len*sizeof(char));
+		
+		gsm_hex_from_bytes(newUSSDRequest,temp, len);
+		newUSSDRequest[2*len]='\0';
+		asprintf(&cmd, "AT+CUSD=1,\"%s\",15", newUSSDRequest);
+		free(newUSSDRequest);
+		free(temp);
 		err = at_send_command(cmd, &p_response);
 		free(cmd);
 		if (err < 0 || p_response->success == 0) {
@@ -2426,11 +2448,10 @@ error:
 static void  unsolicitedUSSD(const char *s)
 {
 	char *line, *p;
-	int typeCode, count, err;
-	char *message;
+	int typeCode, count, err, len;
+	unsigned char *message;
+	unsigned char *outputmessage;
 	char *responseStr[2];
-
-LOGD("Got a USSD message");
 
 	line = strdup(s);
 	err = at_tok_start(&line);
@@ -2438,14 +2459,17 @@ LOGD("Got a USSD message");
 
 	err = at_tok_nextint(&line, &typeCode);
 	if(err < 0) goto error;
-LOGD("USSD type %d",typeCode);
 
 	if(at_tok_hasmore(&line)) {
 		err = at_tok_nextstr(&line, &message);
 		if(err < 0) goto error;
-		asprintf(&responseStr[1], "%s", message);
-LOGD("USSD message %s",message);
-
+		outputmessage = malloc(strlen(message)*sizeof(char));
+		gsm_hex_to_bytes(message,strlen((char *)message),outputmessage);
+		responseStr[1] = malloc(strlen((char *)outputmessage));
+		len = utf8_from_gsm8(outputmessage,strlen((char *)outputmessage),responseStr[1]);
+		responseStr[1][len]='\0';
+//		asprintf(&responseStr[1], "%s", outputmessage);
+		free(outputmessage);
 		count = 2;
 	} else {
 		responseStr[1]=NULL;
