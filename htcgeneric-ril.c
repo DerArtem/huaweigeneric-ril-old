@@ -875,7 +875,7 @@ static void sendCallStateChanged(void *param)
 
 static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 {
-	int err;
+	int err,fd;
 	ATResponse *p_response;
 	ATLine *p_cur;
 	int countCalls;
@@ -1016,6 +1016,16 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 	if(countValidCalls==0) { // close audio if no voice calls.
 		LOGI("Audio Close\n");
 		writesys("audio","5");
+	}
+
+	if(countValidCalls==countCalls) {//no data call is active
+		fd = open("/smodem/live",O_WRONLY);
+		if(fd < 0)
+			LOGE("Couldn't open the connection up/down information\n");
+		else {
+			write(fd, "0", 1);
+			close(fd);
+		}
 	}
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, pp_calls,
@@ -1726,6 +1736,14 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 	memset(&response, 0, sizeof(response));
 
 	/* FIXME fill in messageRef and ackPDU */
+	line = p_response->p_intermediates->line;
+	err = at_tok_start(&line);
+	if (err < 0) goto error;
+
+	err = at_tok_nextint(&line, &response.messageRef);
+	if (err < 0) goto error;
+	
+	response.ackPDU = NULL;
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(response));
 	at_response_free(p_response);
@@ -1778,10 +1796,8 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 
 	if((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
 		close(fd);
-		LOGD("pppd is running while trying to start dataconn\n");
-		//PPP Is already running. what do we do with this? for now exit with success
+		LOGD("pppd is already running\n");
 	} else {
-
 		if(isgsm) {
 			asprintf(&cmd, "AT+CGDCONT=1,\"IP\",\"%s\",,0,0", apn);
 			//FIXME check for error here
@@ -1798,15 +1814,19 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 			// Start data on PDP context 1
 			err = at_send_command("ATD*99***1#", &p_response);
 			if (err < 0 || p_response->success == 0) {
+				at_response_free(p_response);
 				goto error;
 			}
+			at_response_free(p_response);
 		} else {
 			//CDMA
 			err = at_send_command("AT+HTC_DUN=0", NULL);
-			err = at_send_command("ATDT#777", NULL);
-			if (err < 0) {
+			err = at_send_command("ATDT#777", &p_response);
+			if (err < 0 || p_response->success == 0) {
+				at_response_free(p_response);
 				goto error;
 			}
+			at_response_free(p_response);
 		}
 
 		asprintf(&userpass, "%s * %s", user, pass);
@@ -1858,12 +1878,10 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 	}
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
-	at_response_free(p_response);
 	return;
 
 error:
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
-	at_response_free(p_response);
 
 }
 
@@ -1883,23 +1901,25 @@ static void requestDeactivateDefaultPDP(void *data, size_t datalen, RIL_Token t)
 		free(cmd);
 
 		if (err < 0 || p_response->success == 0) {
+			at_response_free(p_response);
 			goto error;
-		fd = open("/smodem/control",O_WRONLY);
-		if(fd < 0)
-			goto error;
-		write(fd, "killppp", 8);
-		close(fd);
 		}
-	} else {
-		RIL_onRequestComplete(t,RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
+		at_response_free(p_response);
+	}
+	fd = open("/smodem/control",O_WRONLY);
+	if(fd < 0)
+		goto error;
+	write(fd, "killppp", 7);
+	close(fd);
+	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
+		close(fd);
+		sleep(1);
 	}
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
-	at_response_free(p_response);
 	return;
 
 error:
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
-	at_response_free(p_response);
 }
 
 static void requestSMSAcknowledge(void *data, size_t datalen, RIL_Token t)
