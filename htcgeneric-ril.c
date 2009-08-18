@@ -881,7 +881,8 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 	int countCalls;
 	RIL_Call *p_calls;
 	RIL_Call **pp_calls;
-	int i;
+	int i,dataCall=0;
+	char status[1];
 	int needRepoll = 0;
 	char *l_callwaiting_num=NULL;
 
@@ -1018,7 +1019,19 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 		writesys("audio","5");
 	}
 
-	if(countValidCalls==countCalls) {//no data call is active
+	fd = open("/smodem/live",O_RDONLY);
+	if(fd < 0)
+		LOGE("Couldn't open the connection up/down information\n");
+	else {
+		err = read(fd,status,1);
+		close(fd);
+		if(strncmp(status,"1",1))
+			dataCall = 0;
+		else
+			dataCall = 1;
+	}
+
+	if(countCalls==0 && dataCall) {//no data call is active
 		fd = open("/smodem/live",O_WRONLY);
 		if(fd < 0)
 			LOGE("Couldn't open the connection up/down information\n");
@@ -1027,6 +1040,9 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 			close(fd);
 		}
 	}
+	else if(countCalls==1 && countValidCalls==0 && !dataCall) //unexpected data call... kill it
+		at_send_command("ATH", NULL);
+
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, pp_calls,
 			countValidCalls * sizeof (RIL_Call *));
@@ -1037,11 +1053,11 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 	if (countValidCalls)  // We don't seem to get a "NO CARRIER" message from
 		// smd, so we're forced to poll until the call ends.
 #else
-		if (needRepoll)
+	if (needRepoll)
 #endif
-		{
-			RIL_requestTimedCallback (sendCallStateChanged, NULL, &TIMEVAL_CALLSTATEPOLL);
-		}
+	{
+		RIL_requestTimedCallback (sendCallStateChanged, NULL, &TIMEVAL_CALLSTATEPOLL);
+	}
 	return;
 
 error:
@@ -1765,7 +1781,7 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 	char *userpass;
 	int err;
 	ATResponse *p_response = NULL;
-	int fd, pppstatus;
+	int fd, pppstatus,i,fd2;
 	FILE *pppconfig;
 	size_t cur = 0;
 	ssize_t written, rlen;
@@ -1793,89 +1809,98 @@ static void requestSetupDefaultPDP(void *data, size_t datalen, RIL_Token t)
 		pass = "dummy";
 
 	LOGD("requesting data connection to APN '%s'\n", apn);
-
-	if((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
-		close(fd);
-		LOGD("pppd is already running\n");
-	} else {
-		if(isgsm) {
-			asprintf(&cmd, "AT+CGDCONT=1,\"IP\",\"%s\",,0,0", apn);
-			//FIXME check for error here
-			err = at_send_command(cmd, NULL);
-			free(cmd);
-			// Set required QoS params to default
-			err = at_send_command("AT+CGQREQ=1", NULL);
-			// Set minimum QoS params to default
-			err = at_send_command("AT+CGQMIN=1", NULL);
-			// packet-domain event reporting
-			err = at_send_command("AT+CGEREP=1,0", NULL);
-			// Hangup anything that's happening there now
-			err = at_send_command("AT+CGACT=0,1", NULL);
-			// Start data on PDP context 1
-			err = at_send_command("ATD*99***1#", &p_response);
-			if (err < 0 || p_response->success == 0) {
-				at_response_free(p_response);
+	i=0;
+	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
+		if(i%5 == 0) {
+			fd2 = open("/smodem/control",O_WRONLY);
+			if(fd2 < 0)
 				goto error;
-			}
-			at_response_free(p_response);
-		} else {
-			//CDMA
-			err = at_send_command("AT+HTC_DUN=0", NULL);
-			err = at_send_command("ATDT#777", &p_response);
-			if (err < 0 || p_response->success == 0) {
-				at_response_free(p_response);
-				goto error;
-			}
-			at_response_free(p_response);
+			write(fd2, "killppp", 7);
+			close(fd2);
 		}
-
-		asprintf(&userpass, "%s * %s", user, pass);
-		len = strlen(userpass);
-		fd = open("/etc/ppp/pap-secrets",O_WRONLY);
-		if(fd < 0)
-			goto error;
-		write(fd, userpass, len);
 		close(fd);
-		fd = open("/etc/ppp/chap-secrets",O_WRONLY);
-		if(fd < 0)
+		if(i>25)
 			goto error;
-		write(fd, userpass, len);
-		close(fd);
-		free(userpass);
-
-		pppconfig = fopen("/etc/ppp/options.smd","r");
-		if(!pppconfig)
-			goto error;
-
-		//filesize
-		fseek(pppconfig, 0, SEEK_END);
-		buffSize = ftell(pppconfig);
-		rewind(pppconfig);
-
-		//allocate memory
-		buffer = (char *) malloc (sizeof(char)*buffSize);
-		if (buffer == NULL)
-			goto error;
-
-		//read in the original file
-		len = fread (buffer,1,buffSize,pppconfig);
-		if (len != buffSize)
-			goto error;
-		fclose(pppconfig);
-
-		pppconfig = fopen("/etc/ppp/options.smd1","w");
-		fwrite(buffer,1,buffSize,pppconfig);
-		fprintf(pppconfig,"name %s\n",user);
-		fclose(pppconfig);
-		free(buffer);
-
+		i++;
 		sleep(1);
-		fd = open("/smodem/control",O_WRONLY);
-		if(fd < 0)
-			goto error;
-		write(fd, "startppp", 8);
-		close(fd);
 	}
+	if(isgsm) {
+		asprintf(&cmd, "AT+CGDCONT=1,\"IP\",\"%s\",,0,0", apn);
+		//FIXME check for error here
+		err = at_send_command(cmd, NULL);
+		free(cmd);
+		// Set required QoS params to default
+		err = at_send_command("AT+CGQREQ=1", NULL);
+		// Set minimum QoS params to default
+		err = at_send_command("AT+CGQMIN=1", NULL);
+		// packet-domain event reporting
+		err = at_send_command("AT+CGEREP=1,0", NULL);
+		// Hangup anything that's happening there now
+		err = at_send_command("AT+CGACT=0,1", NULL);
+		// Start data on PDP context 1
+		err = at_send_command("ATD*99***1#", &p_response);
+		if (err < 0 || p_response->success == 0) {
+			at_response_free(p_response);
+			goto error;
+		}
+		at_response_free(p_response);
+	} else {
+		//CDMA
+		err = at_send_command("AT+HTC_DUN=0", NULL);
+		err = at_send_command("ATDT#777", &p_response);
+		if (err < 0 || p_response->success == 0) {
+			at_response_free(p_response);
+			goto error;
+		}
+		at_response_free(p_response);
+	}
+
+	asprintf(&userpass, "%s * %s", user, pass);
+	len = strlen(userpass);
+	fd = open("/etc/ppp/pap-secrets",O_WRONLY);
+	if(fd < 0)
+		goto error;
+	write(fd, userpass, len);
+	close(fd);
+	fd = open("/etc/ppp/chap-secrets",O_WRONLY);
+	if(fd < 0)
+		goto error;
+	write(fd, userpass, len);
+	close(fd);
+	free(userpass);
+
+	pppconfig = fopen("/etc/ppp/options.smd","r");
+	if(!pppconfig)
+		goto error;
+
+	//filesize
+	fseek(pppconfig, 0, SEEK_END);
+	buffSize = ftell(pppconfig);
+	rewind(pppconfig);
+
+	//allocate memory
+	buffer = (char *) malloc (sizeof(char)*buffSize);
+	if (buffer == NULL)
+		goto error;
+
+	//read in the original file
+	len = fread (buffer,1,buffSize,pppconfig);
+	if (len != buffSize)
+		goto error;
+	fclose(pppconfig);
+
+	pppconfig = fopen("/etc/ppp/options.smd1","w");
+	fwrite(buffer,1,buffSize,pppconfig);
+	fprintf(pppconfig,"name %s\n",user);
+	fclose(pppconfig);
+	free(buffer);
+
+	sleep(1);
+	fd = open("/smodem/control",O_WRONLY);
+	if(fd < 0)
+		goto error;
+	write(fd, "startppp", 8);
+	close(fd);
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	return;
@@ -1890,7 +1915,7 @@ static void requestDeactivateDefaultPDP(void *data, size_t datalen, RIL_Token t)
 	int err;
 	char * cmd;
 	char * cid;
-	int fd;
+	int fd,i,fd2;
 	ATResponse *p_response = NULL;
 
 	cid = ((char **)data)[0];
@@ -1906,13 +1931,19 @@ static void requestDeactivateDefaultPDP(void *data, size_t datalen, RIL_Token t)
 		}
 		at_response_free(p_response);
 	}
-	fd = open("/smodem/control",O_WRONLY);
-	if(fd < 0)
-		goto error;
-	write(fd, "killppp", 7);
-	close(fd);
+	i=0;
 	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
+		if(i%5 == 0) {
+			fd2 = open("/smodem/control",O_WRONLY);
+			if(fd2 < 0)
+				goto error;
+			write(fd2, "killppp", 7);
+			close(fd2);
+		}
 		close(fd);
+		if(i>25)
+			goto error;
+		i++;
 		sleep(1);
 	}
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
