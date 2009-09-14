@@ -2942,13 +2942,32 @@ static void requestGetIMSI(RIL_Token t)
 	char *response;
 	char *part;
 	int err;
-	if(isgsm) {
-		err = at_send_command_numeric("AT+CIMI", &p_response);
-		if (err < 0 || p_response->success == 0)
+
+       if(isgsm) { 
+               int loop = 0;
+               int success = 0;
+               /* We are looping here because the command fails on the first try.
+                   What needs to be done, is to trap the "+CME ERROR: 14" which means
+                   SIM BUSY and retry that. As a workaround for now, simply try, wait
+                   1 second, and try again, until a valid result is obtained. Usually only
+                   takes 2 tries.
+                */
+               while ( loop < 10) {
+                 err = at_send_command_numeric("AT+CIMI", &p_response);
+                 if (err < 0 || p_response->success == 0) {
+                  sleep(1);
+                  loop++;
+                 }
+                 else {
+                  loop=10;
+                  success=1;
+                 }
+               }
+
+/*             if (err < 0 || p_response->success == 0 ) */
+               if (success == 0)
 			goto error;
-
 		imsi = strdup(p_response->p_intermediates->line);
-
 	} else {
 		err = at_send_command_singleline("AT+COPS?", "+COPS:", &p_response);
 
@@ -4031,7 +4050,7 @@ static void initializeCallback(void *param)
 		/*  Extra stuff */
 		at_send_command("AT+FCLASS=0", NULL);
 
-//		at_send_command("AT+CNMI=1,2,2,2,0", NULL);
+               at_send_command("AT+CNMI=1,2,2,2,0", NULL);
 		at_send_command("AT+CPPP=1", NULL);
 
 
@@ -4047,6 +4066,8 @@ static void initializeCallback(void *param)
 		/*  GPRS registration events */
 		at_send_command("AT+CGREG=2", NULL);
 
+               /* Disable RSSI Indicators for Now */
+               at_send_command("AT@HTCCSQ=0", NULL);
 		at_send_command("AT+ENCSQ=1", NULL);
 		at_send_command("AT@HTCDIS=1;@HTCSAP=1", NULL);
 		at_send_command("AT+HTCmaskW1=262143,162161", NULL);
