@@ -148,7 +148,7 @@ gsm_hex2_to_byte0( const char*  hex )
 void
 gsm_hex_from_byte( char*  hex, int val )
 {
-    static const char  hexdigits[] = "0123456789abcdef";
+    static const char  hexdigits[] = "0123456789ABCDEF";
 
     hex[0] = hexdigits[(val >> 4) & 15];
     hex[1] = hexdigits[val & 15];

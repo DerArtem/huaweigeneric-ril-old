@@ -2208,7 +2208,7 @@ static void unsolicitedRSSI(const char * s)
 
 	signalStrength[0]=response[0];
 	signalStrength[1]=response[1];
-	free(line);
+//	free(line);
 
 	RIL_onUnsolicitedResponse(RIL_UNSOL_SIGNAL_STRENGTH, response, sizeof(response));
 	return;
@@ -2470,10 +2470,9 @@ static void requestSendUSSD(void *data, size_t datalen, RIL_Token t)
 	char *newUSSDRequest;
 	if(isgsm) {
 		ussdRequest = (cbytes_t)(data);
-		temp = malloc(strlen((char *)ussdRequest)*sizeof(char));
+		temp = malloc(strlen((char *)ussdRequest)*sizeof(char)+1);
 		len = utf8_to_gsm8(ussdRequest,strlen((char *)ussdRequest),temp);
-		newUSSDRequest = malloc(2*len*sizeof(char));
-		
+		newUSSDRequest = malloc(2*len*sizeof(char)+1);
 		gsm_hex_from_bytes(newUSSDRequest,temp, len);
 		newUSSDRequest[2*len]='\0';
 		asprintf(&cmd, "AT+CUSD=1,\"%s\",15", newUSSDRequest);
@@ -2498,13 +2497,15 @@ error:
 
 static void  unsolicitedUSSD(const char *s)
 {
-	char *line, *p;
+	char *line, *linestart;
 	int typeCode, count, err, len;
 	unsigned char *message;
 	unsigned char *outputmessage;
 	char *responseStr[2];
 
-	line = strdup(s);
+	LOGD("unsolicitedUSSD %s\n",s);
+
+	linestart=line=strdup(s);
 	err = at_tok_start(&line);
 	if(err < 0) goto error;
 
@@ -2514,21 +2515,20 @@ static void  unsolicitedUSSD(const char *s)
 	if(at_tok_hasmore(&line)) {
 		err = at_tok_nextstr(&line, &message);
 		if(err < 0) goto error;
-		outputmessage = malloc(strlen(message)*sizeof(char));
-		gsm_hex_to_bytes(message,strlen((char *)message),outputmessage);
-		responseStr[1] = malloc(strlen((char *)outputmessage));
-		len = utf8_from_gsm8(outputmessage,strlen((char *)outputmessage),responseStr[1]);
-		responseStr[1][len]='\0';
-//		asprintf(&responseStr[1], "%s", outputmessage);
+		outputmessage = malloc(strlen(message)*2+1);
+		gsm_hex_to_bytes(message,strlen(message),outputmessage);
+		responseStr[1] = malloc(strlen(outputmessage)*2+1);
+		len = utf8_from_gsm8(outputmessage,strlen(outputmessage),responseStr[1]);
+		responseStr[1][strlen(message)/2]='\0';
 		free(outputmessage);
 		count = 2;
 	} else {
 		responseStr[1]=NULL;
 		count = 1;
 	}
-	free(line);
+	free(linestart);
 	asprintf(&responseStr[0], "%d", typeCode);
-
+	
 	RIL_onUnsolicitedResponse (RIL_UNSOL_ON_USSD, responseStr, count*sizeof(char*));
 	return;
 
