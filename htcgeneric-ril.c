@@ -285,6 +285,55 @@ error:
 	return -1;
 }
 
+static int numDataCalls()
+{
+	int err;
+	ATResponse *p_response;
+	ATLine *p_cur;
+	int countCalls;
+	RIL_Call *p_call;
+	int i;
+	int countDataCalls;
+
+	if(currentState() != RADIO_STATE_SIM_READY){
+		return 0;
+	}
+
+	err = at_send_command_multiline ("AT+CLCC", "+CLCC:", &p_response);
+
+	if (err != 0 || p_response->success == 0) {
+		return 0;
+	}
+
+	/* count the calls */
+	for (countCalls = 0, p_cur = p_response->p_intermediates
+			; p_cur != NULL
+			; p_cur = p_cur->p_next
+	    ) {
+		countCalls++;
+	}
+
+	p_call = (RIL_Call *)alloca(sizeof(RIL_Call));
+	memset (p_call, 0, sizeof(RIL_Call));
+
+	countDataCalls = 0;
+
+	for (i = 0, p_cur = p_response->p_intermediates
+			; p_cur != NULL
+			; p_cur = p_cur->p_next
+	    ) {
+		err = callFromCLCCLine(p_cur->line, p_call);
+
+		if (err != 0) {
+			continue;
+		}
+
+		if(p_call[0].isVoice == 0) // only count data calls
+			countDataCalls++;
+	}
+	return countDataCalls;
+}
+
 
 /** do post-AT+CFUN=1 initialization */
 static void onRadioPowerOn()
@@ -550,13 +599,16 @@ static void requestOrSendDataCallList(RIL_Token *t)
 		responses = alloca(sizeof(RIL_Data_Call_Response));
 
 		responses[0].cid = 1;
-		responses[0].active = 0;
+		if (numDataCalls() > 0)
+			responses[0].active = 1;
+		else
+			responses[0].active = 0;
 		responses[0].type = "";
 		responses[0].apn = "internet";
 		responses[0].address = "";
 	}
 
-	fd = open("/smodem/live",O_RDONLY);
+/*	fd = open("/smodem/live",O_RDONLY);
 	if(fd < 0)
 		LOGE("Couldn't open the connection up/down information\n");
 	else {
@@ -575,7 +627,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
 	}
 	else
 		responses[0].active = dataCall;
-
+*/
 	if (t != NULL)
 		RIL_onRequestComplete(*t, RIL_E_SUCCESS, responses,
 				n * sizeof(RIL_Data_Call_Response));
@@ -1030,7 +1082,7 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 		writesys("audio","5");
 	}
 
-	fd = open("/smodem/live",O_RDONLY);
+/*	fd = open("/smodem/live",O_RDONLY);
 	if(fd < 0)
 		LOGE("Couldn't open the connection up/down information\n");
 	else {
@@ -1053,7 +1105,7 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 	}
 	else if(countCalls==1 && countValidCalls==0 && !dataCall) //unexpected data call... kill it
 		at_send_command("ATH", NULL);
-
+*/
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, pp_calls,
 			countValidCalls * sizeof (RIL_Call *));
@@ -1800,7 +1852,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	char *buffer;
 	long buffSize, len;
 	int retry = 10;
-	char *response[2] = { "1", PPP_TTY_PATH };
+	char *response[3] = { "1", PPP_TTY_PATH, NULL };
 
 	apn = ((const char **)data)[2];
 	user = ((char **)data)[3];
