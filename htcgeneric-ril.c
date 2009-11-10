@@ -43,8 +43,8 @@
 
 #define RIL_REQUEST_SEND_SMS_EXTENDED 512
 
-/* pathname returned from RIL_REQUEST_SETUP_DEFAULT_PDP */
-#define PPP_TTY_PATH "ppp0"
+/* pathname returned from RIL_REQUEST_SETUP_DATA_CALL / RIL_REQUEST_SETUP_DEFAULT_PDP */
+#define PPP_TTY_PATH "/dev/smd1"
 
 #ifdef USE_TI_COMMANDS
 
@@ -427,7 +427,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
 {
 	ATResponse *p_response;
 	ATLine *p_cur;
-	RIL_PDP_Context_Response *responses;
+	RIL_Data_Call_Response *responses;
 	int err;
 	int dataCall = 0;
 	char status[1];
@@ -547,7 +547,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
 	} else {
 		//CDMA
 		n = 1;
-		responses = alloca(sizeof(RIL_PDP_Context_Response));
+		responses = alloca(sizeof(RIL_Data_Call_Response));
 
 		responses[0].cid = 1;
 		responses[0].active = 0;
@@ -1802,8 +1802,8 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	int retry = 10;
 	char *response[2] = { "1", PPP_TTY_PATH };
 
-	apn = ((const char **)data)[0];
-	user = ((char **)data)[1];
+	apn = ((const char **)data)[2];
+	user = ((char **)data)[3];
 	if(user != NULL)
 	{
 		if (strlen(user)<2)
@@ -1811,7 +1811,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	} else
 		user = "dummy";
 
-	pass = ((char **)data)[2];
+	pass = ((char **)data)[4];
 	if(pass != NULL)
 	{
 		if (strlen(pass)<2)
@@ -1821,7 +1821,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 
 	LOGD("requesting data connection to APN '%s'\n", apn);
 	i=0;
-	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
+/*	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
 		if(i%5 == 0) {
 			fd2 = open("/smodem/control",O_WRONLY);
 			if(fd2 < 0)
@@ -1835,6 +1835,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		i++;
 		sleep(1);
 	}
+*/
 	if(isgsm) {
 		asprintf(&cmd, "AT+CGDCONT=1,\"IP\",\"%s\",,0,0", apn);
 		//FIXME check for error here
@@ -1866,6 +1867,8 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		at_response_free(p_response);
 	}
 
+/*
+	//set up the pap/chap secrets file
 	asprintf(&userpass, "%s * %s", user, pass);
 	len = strlen(userpass);
 	fd = open("/etc/ppp/pap-secrets",O_WRONLY);
@@ -1912,7 +1915,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		goto error;
 	write(fd, "startppp", 8);
 	close(fd);
-
+*/
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	return;
 
@@ -1921,7 +1924,7 @@ error:
 
 }
 
-static void requestDeactivateDefaultPDP(void *data, size_t datalen, RIL_Token t)
+static void requestDeactivateDataCall(void *data, size_t datalen, RIL_Token t)
 {
 	int err;
 	char * cmd;
@@ -1941,8 +1944,12 @@ static void requestDeactivateDefaultPDP(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		}
 		at_response_free(p_response);
+	} else {
+		//CDMA
+		RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
+		return;
 	}
-	i=0;
+/*	i=0;
 	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
 		if(i%5 == 0) {
 			fd2 = open("/smodem/control",O_WRONLY);
@@ -1956,7 +1963,7 @@ static void requestDeactivateDefaultPDP(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		i++;
 		sleep(1);
-	}
+	}*/
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 	return;
 
@@ -3456,10 +3463,20 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 	switch (request) {
 		case RIL_REQUEST_GET_SIM_STATUS:
 			{
-				int simStatus;
+				RIL_CardStatus *p_card_status;
+				char *p_buffer;
+				int buffer_size;
 
-				simStatus = getSIMStatus();
-				RIL_onRequestComplete(t, RIL_E_SUCCESS, &simStatus, sizeof(simStatus));
+				int result = getCardStatus(&p_card_status);
+				if (result == RIL_E_SUCCESS) {
+					p_buffer = (char *)p_card_status;
+					buffer_size = sizeof(*p_card_status);
+				} else {
+					p_buffer = NULL;
+					buffer_size = 0;
+				}
+				RIL_onRequestComplete(t, result, p_buffer, buffer_size);
+				freeCardStatus(p_card_status);
 				break;
 			}
 
@@ -3554,11 +3571,11 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			break;
 
 		case RIL_REQUEST_SETUP_DATA_CALL:
-			requestSetupDefaultPDP(data, datalen, t);
+			requestSetupDataCall(data, datalen, t);
 			break;
 
-		case RIL_REQUEST_DEACTIVATE_DEFAULT_PDP:
-			requestDeactivateDefaultPDP(data, datalen, t);
+		case RIL_REQUEST_DEACTIVATE_DATA_CALL:
+			requestDeactivateDataCall(data, datalen, t);
 			break;
 
 		case RIL_REQUEST_SMS_ACKNOWLEDGE:
@@ -3712,7 +3729,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			requestSTKSetProfile(data, datalen, t);
 			break;
 
-		case RIL_REQUEST_LAST_PDP_FAIL_CAUSE:
+		case RIL_REQUEST_LAST_DATA_CALL_FAIL_CAUSE:
 		case RIL_REQUEST_LAST_CALL_FAIL_CAUSE:
 			requestLastFailCause(t);
 			break;
