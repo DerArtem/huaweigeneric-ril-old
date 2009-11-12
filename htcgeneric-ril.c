@@ -44,7 +44,7 @@
 #define RIL_REQUEST_SEND_SMS_EXTENDED 512
 
 /* pathname returned from RIL_REQUEST_SETUP_DATA_CALL / RIL_REQUEST_SETUP_DEFAULT_PDP */
-#define PPP_TTY_PATH "/dev/smd1"
+#define PPP_TTY_PATH "ppp0"
 
 #ifdef USE_TI_COMMANDS
 
@@ -1627,8 +1627,8 @@ static void requestRegistrationState(int request, void *data,
 	if (request == RIL_REQUEST_GPRS_REGISTRATION_STATE && dataCall == 0)
 		response[0] = 3;
 	asprintf(&responseStr[0], "%d", response[0]);
-	asprintf(&responseStr[1], "%x", response[1]);
-	asprintf(&responseStr[2], "%x", response[2]);
+	asprintf(&responseStr[1], "%d", response[1]);
+	asprintf(&responseStr[2], "%d", response[2]);
 
 	if (count > 3)
 		asprintf(&responseStr[3], "%d", response[3]);
@@ -1872,8 +1872,8 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		pass = "dummy";
 
 	LOGD("requesting data connection to APN '%s'\n", apn);
-	i=0;
-/*	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
+/*	i=0;
+	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
 		if(i%5 == 0) {
 			fd2 = open("/smodem/control",O_WRONLY);
 			if(fd2 < 0)
@@ -1919,7 +1919,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		at_response_free(p_response);
 	}
 
-/*
+
 	//set up the pap/chap secrets file
 	asprintf(&userpass, "%s * %s", user, pass);
 	len = strlen(userpass);
@@ -1962,12 +1962,8 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	free(buffer);
 
 	sleep(1);
-	fd = open("/smodem/control",O_WRONLY);
-	if(fd < 0)
-		goto error;
-	write(fd, "startppp", 8);
-	close(fd);
-*/
+	system("start ppp_gprs");
+
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	return;
 
@@ -1996,26 +1992,15 @@ static void requestDeactivateDataCall(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		}
 		at_response_free(p_response);
-	} else {
+//	} else {
 		//CDMA
-		RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
-		return;
+		//TODO: Check which call it is and hang up that one
+		//at_send_command("ATH", NULL);
+//		RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
+//		return;
 	}
-/*	i=0;
-	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
-		if(i%5 == 0) {
-			fd2 = open("/smodem/control",O_WRONLY);
-			if(fd2 < 0)
-				goto error;
-			write(fd2, "killppp", 7);
-			close(fd2);
-		}
-		close(fd);
-		if(i>25)
-			goto error;
-		i++;
-		sleep(1);
-	}*/
+	system("stop ppp_gprs");
+
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 	return;
 
