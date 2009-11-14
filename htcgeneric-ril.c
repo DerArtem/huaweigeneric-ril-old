@@ -78,6 +78,7 @@ static SIM_Status getSIMStatus();
 static int getCardStatus(RIL_CardStatus **pp_card_status);
 static void freeCardStatus(RIL_CardStatus *p_card_status);
 static void onDataCallListChanged(void *param);
+static int killConn(char * cid);
 
 
 extern const char * requestToString(int request);
@@ -479,9 +480,9 @@ static void requestOrSendDataCallList(RIL_Token *t)
 	ATLine *p_cur;
 	RIL_Data_Call_Response *responses;
 	int err;
-	int dataCall = 0;
 	char status[1];
 	int fd;
+	int pppConnected = 0;
 	int n = 0;
 	char *out;
 
@@ -609,26 +610,16 @@ static void requestOrSendDataCallList(RIL_Token *t)
 		responses[0].address = "";
 	}
 
-/*	fd = open("/smodem/live",O_RDONLY);
-	if(fd < 0)
-		LOGE("Couldn't open the connection up/down information\n");
-	else {
-		err = read(fd,status,1);
+    // make sure pppd is still running, invalidate datacall if it isn't
+	if ((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0)
+    {
 		close(fd);
-		if(strncmp(status,"1",1))
-			dataCall = 0;
-		else
-			dataCall = 1;
+    }
+	else
+	{
+		responses[0].active = 0;
 	}
 
-	if(isgsm)
-	{
-		if(responses[0].active == 1)
-			responses[0].active = dataCall;
-	}
-	else
-		responses[0].active = dataCall;
-*/
 	if (t != NULL)
 		RIL_onRequestComplete(*t, RIL_E_SUCCESS, responses,
 				n * sizeof(RIL_Data_Call_Response));
@@ -945,7 +936,7 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 	int countCalls;
 	RIL_Call *p_calls;
 	RIL_Call **pp_calls;
-	int i,dataCall=0;
+	int i;
 	char status[1];
 	int needRepoll = 0;
 	char *l_callwaiting_num=NULL;
@@ -1082,31 +1073,6 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 		LOGI("Audio Close\n");
 		writesys("audio","5");
 	}
-
-/*	fd = open("/smodem/live",O_RDONLY);
-	if(fd < 0)
-		LOGE("Couldn't open the connection up/down information\n");
-	else {
-		err = read(fd,status,1);
-		close(fd);
-		if(strncmp(status,"1",1))
-			dataCall = 0;
-		else
-			dataCall = 1;
-	}
-
-	if(countCalls==0 && dataCall) {//no data call is active
-		fd = open("/smodem/live",O_WRONLY);
-		if(fd < 0)
-			LOGE("Couldn't open the connection up/down information\n");
-		else {
-			write(fd, "0", 1);
-			close(fd);
-		}
-	}
-	else if(countCalls==1 && countValidCalls==0 && !dataCall) //unexpected data call... kill it
-		at_send_command("ATH", NULL);
-*/
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, pp_calls,
 			countValidCalls * sizeof (RIL_Call *));
@@ -1836,16 +1802,18 @@ error:
 	at_response_free(p2_response);
 }
 
+static char userPassStatic[512] = "preload";
+
 static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 {
 	const char *apn;
 	char *user = NULL;
 	char *pass = NULL;
 	char *cmd;
-	char *userpass;
+	char userpass[512];
 	int err;
 	ATResponse *p_response = NULL;
-	int fd, pppstatus,i,fd2;
+	int fd, pppstatus,i;
 	FILE *pppconfig;
 	size_t cur = 0;
 	ssize_t written, rlen;
@@ -1873,22 +1841,12 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		pass = "dummy";
 
 	LOGD("requesting data connection to APN '%s'\n", apn);
-/*	i=0;
-	while((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0) {
-		if(i%5 == 0) {
-			fd2 = open("/smodem/control",O_WRONLY);
-			if(fd2 < 0)
-				goto error;
-			write(fd2, "killppp", 7);
-			close(fd2);
-		}
-		close(fd);
-		if(i>25)
-			goto error;
-		i++;
-		sleep(1);
-	}
-*/
+
+	//Make sure there is no existing connection or pppd instance running
+	char * cid = response[0];
+	if(killConn(cid) < 0)
+		goto error;
+
 	if(isgsm) {
 		asprintf(&cmd, "AT+CGDCONT=1,\"IP\",\"%s\",,0,0", apn);
 		//FIXME check for error here
@@ -1909,6 +1867,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		}
 		at_response_free(p_response);
+		sleep(20); //Wait for the modem to finish
 	} else {
 		//CDMA
 		err = at_send_command("AT+HTC_DUN=0", NULL);
@@ -1918,52 +1877,57 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		}
 		at_response_free(p_response);
+		sleep(2); //Wait for the modem to finish
 	}
 
-
 	//set up the pap/chap secrets file
-	asprintf(&userpass, "%s * %s", user, pass);
-	len = strlen(userpass);
-	fd = open("/etc/ppp/pap-secrets",O_WRONLY);
-	if(fd < 0)
+	sprintf(userpass, "%s * %s", user, pass);
+	if (0 != strcmp(userpass, userPassStatic))
+	{
+		strcpy (userPassStatic, userpass);
+		len = strlen(userpass);
+		fd = open("/etc/ppp/pap-secrets",O_WRONLY);
+		if(fd < 0)
+			goto error;
+		write(fd, userpass, len);
+		close(fd);
+		fd = open("/etc/ppp/chap-secrets",O_WRONLY);
+		if(fd < 0)
+			goto error;
+		write(fd, userpass, len);
+		close(fd);
+
+		pppconfig = fopen("/etc/ppp/options.smd","r");
+		if(!pppconfig)
+			goto error;
+
+		//filesize
+		fseek(pppconfig, 0, SEEK_END);
+		buffSize = ftell(pppconfig);
+		rewind(pppconfig);
+
+		//allocate memory
+		buffer = (char *) malloc (sizeof(char)*buffSize);
+		if (buffer == NULL)
+			goto error;
+
+		//read in the original file
+		len = fread (buffer,1,buffSize,pppconfig);
+		if (len != buffSize)
+			goto error;
+		fclose(pppconfig);
+
+		pppconfig = fopen("/etc/ppp/options.smd1","w");
+		fwrite(buffer,1,buffSize,pppconfig);
+		fprintf(pppconfig,"name %s\n",user);
+		fclose(pppconfig);
+		free(buffer);
+	}
+
+	if (system("/bin/pppd /dev/smd1") < 0)
 		goto error;
-	write(fd, userpass, len);
-	close(fd);
-	fd = open("/etc/ppp/chap-secrets",O_WRONLY);
-	if(fd < 0)
-		goto error;
-	write(fd, userpass, len);
-	close(fd);
-	free(userpass);
 
-	pppconfig = fopen("/etc/ppp/options.smd","r");
-	if(!pppconfig)
-		goto error;
-
-	//filesize
-	fseek(pppconfig, 0, SEEK_END);
-	buffSize = ftell(pppconfig);
-	rewind(pppconfig);
-
-	//allocate memory
-	buffer = (char *) malloc (sizeof(char)*buffSize);
-	if (buffer == NULL)
-		goto error;
-
-	//read in the original file
-	len = fread (buffer,1,buffSize,pppconfig);
-	if (len != buffSize)
-		goto error;
-	fclose(pppconfig);
-
-	pppconfig = fopen("/etc/ppp/options.smd1","w");
-	fwrite(buffer,1,buffSize,pppconfig);
-	fprintf(pppconfig,"name %s\n",user);
-	fclose(pppconfig);
-	free(buffer);
-
-	sleep(1);
-	system("/system/bin/start pppd_gprs");
+	sleep(2); // Allow time for ip-up to complete
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	return;
@@ -1973,42 +1937,64 @@ error:
 
 }
 
-static void requestDeactivateDataCall(void *data, size_t datalen, RIL_Token t)
+static int killConn(char * cid)
 {
 	int err;
 	char * cmd;
-	char * cid;
-	int fd,i,fd2;
+	int fd,i;
 	ATResponse *p_response = NULL;
 
+    if (isgsm) {
+        asprintf(&cmd, "AT+CGACT=0,%s", cid);
+
+        err = at_send_command(cmd, &p_response);
+        free(cmd);
+
+        if (err < 0 || p_response->success == 0) {
+            at_response_free(p_response);
+            goto error;
+        }
+        at_response_free(p_response);
+    } else {
+        //CDMA
+        //Check which call it is and hang up that one
+        int callNumber = dataCallNum();
+        if (callNumber >= 0)
+        {
+            err = at_send_command("ATH", &p_response);
+
+            if (err < 0 || p_response->success == 0) {
+                at_response_free(p_response);
+                goto error;
+            }
+        }
+        //at_send_command("ATH", NULL);
+    }
+    i=0;
+    while ((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0)
+    {
+        if(i%5 == 0)
+            system("killall pppd");
+        if(i>25)
+            goto error;
+        i++;
+		close(fd);
+        sleep(1);
+    }
+
+	return 0;
+
+error:
+	return -1;
+}
+
+static void requestDeactivateDataCall(void *data, size_t datalen, RIL_Token t)
+{
+	char * cid;
+
 	cid = ((char **)data)[0];
-	if (isgsm) {
-		asprintf(&cmd, "AT+CGACT=0,%s", cid);
-
-		err = at_send_command(cmd, &p_response);
-		free(cmd);
-
-		if (err < 0 || p_response->success == 0) {
-			at_response_free(p_response);
-			goto error;
-		}
-		at_response_free(p_response);
-	} else {
-		//CDMA
-		//Check which call it is and hang up that one
-		int callNumber = dataCallNum();
-		if (callNumber >= 0)
-		{
-			err = at_send_command("ATH", &p_response);
-
-		    if (err < 0 || p_response->success == 0) {
-			    at_response_free(p_response);
-				goto error;
-			}
-		}
-		//at_send_command("ATH", NULL);
-	}
-	system("/system/bin/stop pppd_gprs");
+	if (killConn(cid) < 0)
+		goto error;
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 	return;
@@ -3826,7 +3812,7 @@ static void onCancel (RIL_Token t)
 
 static const char * getVersion(void)
 {
-	return "HTC Vogue Community RIL 0.8";
+	return "HTC Vogue Community RIL 1.6.0";
 }
 
 	static void
