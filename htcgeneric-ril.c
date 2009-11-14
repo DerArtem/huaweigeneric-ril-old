@@ -285,7 +285,8 @@ error:
 	return -1;
 }
 
-static int numDataCalls()
+//returns the call number of the active data call, or -1 if no active call
+static int dataCallNum()
 {
 	int err;
 	ATResponse *p_response;
@@ -293,16 +294,16 @@ static int numDataCalls()
 	int countCalls;
 	RIL_Call *p_call;
 	int i;
-	int countDataCalls;
+	int callNumber = -1;
 
 	if(currentState() != RADIO_STATE_SIM_READY){
-		return 0;
+		return -1;
 	}
 
 	err = at_send_command_multiline ("AT+CLCC", "+CLCC:", &p_response);
 
 	if (err != 0 || p_response->success == 0) {
-		return 0;
+		return -1;
 	}
 
 	/* count the calls */
@@ -316,8 +317,6 @@ static int numDataCalls()
 	p_call = (RIL_Call *)alloca(sizeof(RIL_Call));
 	memset (p_call, 0, sizeof(RIL_Call));
 
-	countDataCalls = 0;
-
 	for (i = 0, p_cur = p_response->p_intermediates
 			; p_cur != NULL
 			; p_cur = p_cur->p_next
@@ -329,9 +328,11 @@ static int numDataCalls()
 		}
 
 		if(p_call[0].isVoice == 0) // only count data calls
-			countDataCalls++;
+		{
+			callNumber = i;
+		}
 	}
-	return countDataCalls;
+	return callNumber;
 }
 
 
@@ -599,7 +600,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
 		responses = alloca(sizeof(RIL_Data_Call_Response));
 
 		responses[0].cid = 1;
-		if (numDataCalls() > 0)
+		if (dataCallNum() >= 0)
 			responses[0].active = 1;
 		else
 			responses[0].active = 0;
@@ -1962,7 +1963,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	free(buffer);
 
 	sleep(1);
-	system("start ppp_gprs");
+	system("/system/bin/start pppd_gprs");
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	return;
@@ -1992,14 +1993,22 @@ static void requestDeactivateDataCall(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		}
 		at_response_free(p_response);
-//	} else {
+	} else {
 		//CDMA
-		//TODO: Check which call it is and hang up that one
+		//Check which call it is and hang up that one
+		int callNumber = dataCallNum();
+		if (callNumber >= 0)
+		{
+			err = at_send_command("ATH", &p_response);
+
+		    if (err < 0 || p_response->success == 0) {
+			    at_response_free(p_response);
+				goto error;
+			}
+		}
 		//at_send_command("ATH", NULL);
-//		RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
-//		return;
 	}
-	system("stop ppp_gprs");
+	system("/system/bin/stop pppd_gprs");
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 	return;
