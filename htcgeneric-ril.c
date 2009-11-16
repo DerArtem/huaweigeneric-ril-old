@@ -1592,7 +1592,10 @@ static void requestRegistrationState(int request, void *data,
 			dataCall = 1;
 	}
 	if (request == RIL_REQUEST_GPRS_REGISTRATION_STATE && dataCall == 0)
+	{
 		response[0] = 3;
+		killConn("1");
+	}
 	asprintf(&responseStr[0], "%d", response[0]);
 	asprintf(&responseStr[1], "%d", response[1]);
 	asprintf(&responseStr[2], "%d", response[2]);
@@ -1941,8 +1944,20 @@ static int killConn(char * cid)
 {
 	int err;
 	char * cmd;
-	int fd,i;
+	int fd;
+	int i=0;
 	ATResponse *p_response = NULL;
+
+    while ((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0)
+    {
+        if(i%5 == 0)
+            system("killall pppd");
+        if(i>25)
+            goto error;
+        i++;
+		close(fd);
+        sleep(1);
+    }
 
     if (isgsm) {
         asprintf(&cmd, "AT+CGACT=0,%s", cid);
@@ -1969,17 +1984,6 @@ static int killConn(char * cid)
             }
         }
         //at_send_command("ATH", NULL);
-    }
-    i=0;
-    while ((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0)
-    {
-        if(i%5 == 0)
-            system("killall pppd");
-        if(i>25)
-            goto error;
-        i++;
-		close(fd);
-        sleep(1);
     }
 
 	return 0;
