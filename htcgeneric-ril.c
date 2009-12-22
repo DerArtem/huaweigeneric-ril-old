@@ -41,8 +41,6 @@
 
 #define MAX_AT_RESPONSE 0x1000
 
-#define RIL_REQUEST_SEND_SMS_EXTENDED 512
-
 /* pathname returned from RIL_REQUEST_SETUP_DATA_CALL / RIL_REQUEST_SETUP_DEFAULT_PDP */
 #define PPP_TTY_PATH "ppp0"
 
@@ -785,26 +783,34 @@ static void requestGetPreferredNetworkType(void *data, size_t datalen, RIL_Token
 	int response = 0;
 	char *line;
 
-	err = at_send_command_singleline("AT+XRAT?", "+XRAT:", &p_response);
+	if(isgsm)
+	{
+		err = at_send_command_singleline("AT+XRAT?", "+XRAT:", &p_response);
 
-	if (err < 0 || p_response->success == 0) {
-		goto error;
+		if (err < 0 || p_response->success == 0) {
+			goto error;
+		}
+
+		line = p_response->p_intermediates->line;
+
+		err = at_tok_start(&line);
+
+		if (err < 0) {
+			goto error;
+		}
+
+		err = at_tok_nextint(&line, &response);
+
+		response = preferredRatToRilRat(response);
+
+		if (err < 0) {
+			goto error;
+		}
 	}
-
-	line = p_response->p_intermediates->line;
-
-	err = at_tok_start(&line);
-
-	if (err < 0) {
-		goto error;
-	}
-
-	err = at_tok_nextint(&line, &response);
-
-	response = preferredRatToRilRat(response);
-
-	if (err < 0) {
-		goto error;
+	else
+	{
+		//CDMA
+		response = 1;
 	}
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(int));
@@ -1411,6 +1417,7 @@ static void requestRegistrationState(int request, void *data,
 	response[0]=1;
 	response[1]=-1;
 	response[2]=-1;
+	response[3]=1;
 
 	if(isgsm) {
 		if (request == RIL_REQUEST_REGISTRATION_STATE) {
@@ -1516,7 +1523,6 @@ static void requestRegistrationState(int request, void *data,
 					}
 
 					if (commas_op == 3) {
-						count = 4;
 						err = at_tok_start(&line_op);
 						err = at_tok_nextint(&line_op, &skip);
 						if (err < 0) goto error;
@@ -1565,20 +1571,16 @@ static void requestRegistrationState(int request, void *data,
 				if (err < 0) goto error;
 				err = at_tok_nexthexint(&line, &response[3]);
 				if (err < 0) goto error;
-				count = 4;
 				break;
 			default:
 				goto error;
 		}
 	} else { //CDMA
-		if (request == RIL_REQUEST_GPRS_REGISTRATION_STATE) {
-			err = at_tok_nextint(&line, &response[3]);
-			if (response[3] < 1)
-				response[3] = 1;
-			if (response[3] > 3)
-				response[3] = 3;
-			count = 4;
-		}
+		err = at_tok_nextint(&line, &response[3]);
+		if (response[3] < 1)
+			response[3] = 1;
+		if (response[3] > 3)
+			response[3] = 3;
 	}
 	fd = open("/smodem/status",O_RDONLY);
 	if(fd < 0)
@@ -1599,9 +1601,7 @@ static void requestRegistrationState(int request, void *data,
 	asprintf(&responseStr[0], "%d", response[0]);
 	asprintf(&responseStr[1], "%d", response[1]);
 	asprintf(&responseStr[2], "%d", response[2]);
-
-	if (count > 3)
-		asprintf(&responseStr[3], "%d", response[3]);
+	asprintf(&responseStr[3], "%d", response[3]);
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, responseStr, count*sizeof(char*));
 	at_response_free(p_response);
@@ -1692,7 +1692,7 @@ error:
 	at_response_free(p_response);
 }
 
-static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
+static void requestSendSMS(void *data, size_t datalen, RIL_Token t, int request)
 {
 	int err;
 	char smsc[30];
@@ -1707,6 +1707,10 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 	ATResponse *p2_response = NULL;
 	char * cdma=0;
 	char sendstr[512];
+	struct {
+		RIL_SMS_Response resp;
+		int result;
+	} extendedResponse;
 
 	testSmsc = ((char **)data)[0];
 	pdu = ((const char **)data)[1];
@@ -1794,7 +1798,18 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 	
 	response.ackPDU = NULL;
 
-	RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(response));
+	extendedResponse.resp = response;
+	extendedResponse.result = 1;
+
+	if (request == 512) //HTC SMS Extended
+	{
+		RIL_onRequestComplete(t, RIL_E_SUCCESS, &extendedResponse, sizeof(extendedResponse));
+	}
+	else
+	{
+		RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(response));
+	}
+
 	at_response_free(p_response);
 	at_response_free(p2_response);
 	return;
@@ -2272,8 +2287,9 @@ error:
 	return;
 }
 
-static void requestNotSupported(RIL_Token t)
+static void requestNotSupported(RIL_Token t, int request)
 {
+	LOGD("Request %d is unsupported", request);
 	RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
 	return;
 }
@@ -2510,7 +2526,7 @@ static void requestSendSMSExpectMore(void *data, size_t datalen, RIL_Token t)
 	asprintf(&cmd, "AT+CMMS=1");
 	at_send_command(cmd, NULL);
 	free(cmd);
-	requestSendSMS(data, datalen, t);
+	requestSendSMS(data, datalen, t, 0);
 }
 
 static void requestSendUSSD(void *data, size_t datalen, RIL_Token t)
@@ -2771,15 +2787,19 @@ static void requestSetLocationUpdates(void *data, size_t datalen, RIL_Token t)
 	int updates = 0;
 	char *cmd = NULL;
 	ATResponse *p_response = NULL;
-	updates = ((int *)data)[0] == 1? 2 : 1;
 
-	asprintf(&cmd, "AT+CREG=%d", updates);
+	if(isgsm)
+	{
+		updates = ((int *)data)[0] == 1? 2 : 1;
 
-	err = at_send_command_singleline(cmd,"+CLIP:",&p_response);
-	if(err < 0 || p_response->success == 0) goto error;
+		asprintf(&cmd, "AT+CREG=%d", updates);
 
+		err = at_send_command_singleline(cmd,"+CLIP:",&p_response);
+		if(err < 0 || p_response->success == 0) goto error;
+		at_response_free(p_response);
+	}
+	//Always return success for CDMA (for now)
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
-	at_response_free(p_response);
 	return;
 
 error:
@@ -3347,6 +3367,29 @@ error:
 	free(optInfo);
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
+
+/*
+static void requestCdmaSubscription(void * data, size_t datalen, RIL_Token t) {
+	int len = 0;
+	unsigned int *intdata = NULL;
+	int command = 0;
+	
+	len = strlen(data);
+	intdata = (unsigned int*)(alloca((len / 2) * sizeof(unsigned int)));
+	HexStr_to_DecInt(data, intdata);
+
+	command = intdata[0];
+	
+	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+	return;
+ *
+ * "data" is int *
+ * ((int *)data)[0] is == 0 from RUIM/SIM (default)
+ * ((int *)data)[0] is == 1 from NV
+ */
+
+// }
+
 /*
 static void requestNeighboringCellIds(void * data, size_t datalen, RIL_Token t) {
 	int err;
@@ -3473,7 +3516,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 	ATResponse *p_response;
 	int err;
 
-	LOGD("onRequest: %s", requestToString(request));
+	LOGD("onRequest: %s (%d)", requestToString(request), request);
 
 	/* Ignore all requests except RIL_REQUEST_GET_SIM_STATUS
 	 * when RADIO_STATE_UNAVAILABLE.
@@ -3601,9 +3644,9 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			requestDtmfStart(data, datalen, t);
 			break;
 
-		case RIL_REQUEST_SEND_SMS_EXTENDED:
+		case 512: // RIL_REQUEST_SEND_SMS_EXTENDED
 		case RIL_REQUEST_SEND_SMS:
-			requestSendSMS(data, datalen, t);
+			requestSendSMS(data, datalen, t, request);
 			break;
 
 		case RIL_REQUEST_SETUP_DATA_CALL:
@@ -3722,7 +3765,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 
 		case RIL_REQUEST_ENTER_NETWORK_DEPERSONALIZATION:
 			// NOTE: There isn't an AT command with this capability
-			requestNotSupported(t);
+			requestNotSupported(t, request);
 			break;
 
 		case RIL_REQUEST_SET_FACILITY_LOCK:
@@ -3778,8 +3821,12 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			requestSTKSendTerminalResponse(data, datalen, t);
 			break;
 
+/*		case RIL_REQUEST_CDMA_SET_SUBSCRIPTION:
+ *			requestCdmaSubscription(data, datalen, t);
+ *			break;
+ */
 		default:
-			requestNotSupported(t);
+			requestNotSupported(t, request);
 			break;
 	}
 }
