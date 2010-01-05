@@ -3821,6 +3821,26 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			requestSTKSendTerminalResponse(data, datalen, t);
 			break;
 
+		case 503: //GET_SIM_TYPES
+			RIL_onRequestComplete(t, RIL_E_SUCCESS, 0, sizeof(int));
+			break;
+
+		case 504: //GET_PB_ENTRIES_LENGTH
+			{	//SCOPE FOR ENTRIES_LENGTH
+				int response[6];
+				response[0]=1;
+				response[1]=0;
+				response[2]=0;
+				response[3]=0;
+				response[4]=0;
+				response[5]=0;
+				RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
+			}
+			break;
+
+/*		case 525: //GET_SUBSCRIBER_NUMBER
+ *			break;
+ */
 /*		case RIL_REQUEST_CDMA_SET_SUBSCRIPTION:
  *			requestCdmaSubscription(data, datalen, t);
  *			break;
