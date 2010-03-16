@@ -1409,7 +1409,7 @@ static void requestRegistrationState(int request, void *data,
 	int commas;
 	int skip;
 	int i;
-	int count = 3;
+	int count = 4;
 	int fd;
 	int dataCall = 0;
 	char status[1];
@@ -3108,6 +3108,7 @@ static void requestGetIMEISV(RIL_Token t)
 		char * line;
 		unsigned long int imei;
 		char * imeiString;
+
 		err = at_send_command_numeric("AT+GSN", &p_response);
 		if (err < 0 || p_response->success == 0) {
 			RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
@@ -3162,7 +3163,21 @@ static void requestSetNetworkSelectionAutomatic(RIL_Token t)
 static void requestOEMHookStrings(void * data, size_t datalen, RIL_Token t)
 {
 	int i;
-	const char ** cur;
+	const char ** cur=(const char **)data;
+	char *send=NULL;
+	char *startswith=NULL;
+	int err=0;
+	ATResponse *p_response = NULL;
+
+	if(datalen==sizeof (char *)) {
+		send=*cur++;
+		startswith=*cur;
+		err = at_send_command_singleline(send, startswith, &p_response);
+		if(err<0 || p_response->success == 0)
+                        RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+		RIL_onRequestComplete(t, RIL_E_SUCCESS, p_response->p_intermediates->line, sizeof (char *));
+	}
+/*
 	if(isgsm) {
 		LOGD("got OEM_HOOK_STRINGS: 0x%8p %lu", data, (long)datalen);
 
@@ -3175,6 +3190,7 @@ static void requestOEMHookStrings(void * data, size_t datalen, RIL_Token t)
 	} else {
 		RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
 	}
+*/
 	return;
 }
 
