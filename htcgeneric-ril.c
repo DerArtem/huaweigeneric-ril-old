@@ -1679,7 +1679,7 @@ static void requestOperator(void *data, size_t datalen, RIL_Token t)
 	else {
 		response[0]=erisystem;
 		response[1]="Android";
-		response[2]="310995";
+		response[2]="310260";
 	}
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
@@ -3078,7 +3078,7 @@ static void requestGetIMSI(RIL_Token t)
 		if (err < 0)
 			goto error;
 		//FIXME make it work with the real IMSI: asprintf(&imsi, "%s%s", part, response); //Real opID
-		asprintf(&imsi, "310995000000000"); //Fake opID
+		asprintf(&imsi, "310260000000000"); //Fake opID
 
 		free (part);
 	}
