@@ -2573,8 +2573,8 @@ static void  unsolicitedUSSD(const char *s)
 {
 	char *line, *linestart;
 	int typeCode, count, err, len;
-	unsigned char *message;
-	unsigned char *outputmessage;
+	char *message;
+	char *outputmessage;
 	char *responseStr[2];
 
 	LOGD("unsolicitedUSSD %s\n",s);
@@ -2590,9 +2590,9 @@ static void  unsolicitedUSSD(const char *s)
 		err = at_tok_nextstr(&line, &message);
 		if(err < 0) goto error;
 		outputmessage = malloc(strlen(message)*2+1);
-		gsm_hex_to_bytes(message,strlen(message),outputmessage);
+		gsm_hex_to_bytes((cbytes_t)message,strlen(message),(bytes_t)outputmessage);
 		responseStr[1] = malloc(strlen(outputmessage)*2+1);
-		len = utf8_from_gsm8(outputmessage,strlen(outputmessage),responseStr[1]);
+		len = utf8_from_gsm8((cbytes_t)outputmessage,strlen(outputmessage),(bytes_t)responseStr[1]);
 		responseStr[1][strlen(message)/2]='\0';
 		free(outputmessage);
 		count = 2;
@@ -3174,8 +3174,8 @@ static void requestOEMHookStrings(void * data, size_t datalen, RIL_Token t)
 	ATResponse *p_response = NULL;
 
 	if(datalen==sizeof (char *)) {
-		send=*cur++;
-		startswith=*cur;
+		send=(char *)*cur++;
+		startswith=(char *)*cur;
 		err = at_send_command_singleline(send, startswith, &p_response);
 		if(err<0 || p_response->success == 0)
                         RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
