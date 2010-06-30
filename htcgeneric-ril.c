@@ -1843,7 +1843,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	char *buffer;
 	long buffSize, len;
 	int retry = 10;
-	char *response[3] = { "1", PPP_TTY_PATH, NULL };
+	char *response[2] = { "1", PPP_TTY_PATH};
 
 	apn = ((const char **)data)[2];
 	user = ((char **)data)[3];
