@@ -1195,7 +1195,7 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 		if(isgsm)
 			err = at_send_command_singleline("AT+CSQ", "+CSQ:", &p_response);
 		else
-			err = at_send_command_singleline("AT+HTC_CSQ", "+HTC_CSQ:", &p_response);
+			err = at_send_command("AT+CSQ=1", &p_response);
 
 		if (err < 0 || p_response->success == 0) {
 			RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
@@ -1213,8 +1213,8 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 		err = at_tok_nextint(&line, &(response[1]));
 		if (err < 0) goto error;
 		if(!isgsm) {
-			response[0]*=2;
-			response[1]=99;
+//			response[0]=(response[0]*31)/5;
+//			response[1]=99;
 		}
 		signalStrength[0] = response[0];
 		signalStrength[1] = response[1];
@@ -1435,8 +1435,8 @@ static void requestRegistrationState(int request, void *data,
 			goto error;
 		}
 	} else {
-		cmd = "AT+COPS?";
-		prefix= "$HTC_SYSTYPE";
+		cmd = "AT+HTC_GETSYSTYPE=0";
+		prefix= "+HTC_GETSYSTYPE:";
 	}
 	err = 1;
 	for (i=0;i<4 && err != 0;i++)
@@ -1581,9 +1581,9 @@ static void requestRegistrationState(int request, void *data,
 		}
 	} else { //CDMA
 		err = at_tok_nextint(&line, &response[3]);
-		if (response[3] < 1)
+		if (response[3] <= 2)
 			response[3] = 1;
-		if (response[3] > 3)
+		else
 			response[3] = 3;
 	}
 	fd = open("/smodem/status",O_RDONLY);
@@ -1889,7 +1889,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		}
 		at_response_free(p_response);
-		sleep(20); //Wait for the modem to finish
+		sleep(2); //Wait for the modem to finish
 	} else {
 		//CDMA
 		err = at_send_command("AT+HTC_DUN=0", NULL);
@@ -2274,14 +2274,11 @@ static void unsolicitedRSSI(const char * s)
 	err = at_tok_nextint(&line, &(response[0]));
 	if (err < 0) goto error;
 
-//	err = at_tok_nextint(&line, &(response[1]));
-//	if (err < 0) goto error;
-	response[0]*=2;
+	response[0]=(response[0]*31)/5;
 	response[1]=99;
 
 	signalStrength[0]=response[0];
 	signalStrength[1]=response[1];
-//	free(line);
 
 	RIL_onUnsolicitedResponse(RIL_UNSOL_SIGNAL_STRENGTH, response, sizeof(response));
 	return;
