@@ -1191,7 +1191,7 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 	int response[2];
 	char *line;
 
-	if(signalStrength[0] == 0 && signalStrength[1] == 0) {
+//	if(signalStrength[0] == 0 && signalStrength[1] == 0) {
 		if(isgsm)
 			err = at_send_command_singleline("AT+CSQ", "+CSQ:", &p_response);
 		else
@@ -1220,11 +1220,13 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 		signalStrength[1] = response[1];
 		at_response_free(p_response);
 
-	} else {
+/*	} else {
 		LOGD("Sending stored CSQ values to RIL");
 		response[0] = signalStrength[0];
 		response[1] = signalStrength[1];
 	}
+*/
+	LOGI("SignalStrength %d %d",response[0],response[1]);
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	return;
 
@@ -1416,6 +1418,7 @@ static void requestRegistrationState(int request, void *data,
 	int count = 4;
 	int fd;
 	int dataCall = 0;
+	int cdma_systype=0;
 	char status[1];
 
 	response[0]=1;
@@ -1437,6 +1440,15 @@ static void requestRegistrationState(int request, void *data,
 	} else {
 		cmd = "AT+HTC_GETSYSTYPE=0";
 		prefix= "+HTC_GETSYSTYPE:";
+		err = at_send_command_singleline(cmd, prefix, &p_response);
+		if(err==0) {
+			line = p_response->p_intermediates->line;
+			err = at_tok_start(&line);
+			if(err==0)
+				err = at_tok_nextint(&line, &cdma_systype);
+		}
+		cmd = "AT+CREG?";
+		prefix = "+CREG:";	
 	}
 	err = 1;
 	for (i=0;i<4 && err != 0;i++)
@@ -1448,7 +1460,7 @@ static void requestRegistrationState(int request, void *data,
 
 	err = at_tok_start(&line);
 	if (err < 0) goto error;
-	if (isgsm) {
+
 		/* Ok you have to be careful here
 		 * The solicited version of the CREG response is
 		 * +CREG: n, stat, [lac, cid]
@@ -1579,12 +1591,12 @@ static void requestRegistrationState(int request, void *data,
 			default:
 				goto error;
 		}
-	} else { //CDMA
-		err = at_tok_nextint(&line, &response[3]);
-		if (response[3] <= 2)
-			response[3] = 1;
-		else
-			response[3] = 3;
+	if(!isgsm) {
+		if(cdma_systype==3)
+			cdma_systype=9;
+		if(cdma_systype==2)
+			cdma_systype=3;
+		response[3]=cdma_systype;
 	}
 	fd = open("/smodem/status",O_RDONLY);
 	if(fd < 0)
@@ -2260,11 +2272,13 @@ error:
 	LOGE("Invalid NITZ line %s\n", s);
 }
 
+
 static void unsolicitedRSSI(const char * s)
 {
 	int err;
 	int response[2];
 	char * line = NULL;
+	const unsigned char asu_table[6]={0,2,6,12,25,31};
 
 	line = strdup(s);
 
@@ -2274,11 +2288,13 @@ static void unsolicitedRSSI(const char * s)
 	err = at_tok_nextint(&line, &(response[0]));
 	if (err < 0) goto error;
 
-	response[0]=(response[0]*31)/5;
+	response[0]=asu_table[response[0]%6];
 	response[1]=99;
 
 	signalStrength[0]=response[0];
 	signalStrength[1]=response[1];
+
+	LOGI("Signal Strength %d",response[0]);
 
 	RIL_onUnsolicitedResponse(RIL_UNSOL_SIGNAL_STRENGTH, response, sizeof(response));
 	return;
@@ -4367,8 +4383,8 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 			|| strStartsWith(s,"@HTCCSQ:")) {
 		unsolicitedRSSI(s);
 	} else if (strStartsWith(s,"+CREG:")
-			|| strStartsWith(s,"+CGREG:")
-			|| strStartsWith(s,"$HTC_SYSTYPE:")) {
+			|| strStartsWith(s,"+CGREG:"))
+		/*	|| strStartsWith(s,"$HTC_SYSTYPE:")) */{
 		RIL_onUnsolicitedResponse (
 				RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED,
 				NULL, 0);
