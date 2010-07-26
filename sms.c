@@ -107,10 +107,15 @@ void decode_bearer_data(char *msg, int length, char *message, int *is_vm) {
                if(encoding==8 || encoding==0) {
                  for(j=0;j<nchars;j++)
                  *message++=getbits(msg+i*2+4,13+8*j,8);
-                } else {
-                    strcpy(message,"bad SMS encoding");
-                    message+=16;
-                }
+                } else 
+		 if(encoding==4) {
+		   for(j=0;j<nchars;j++)
+                    *message++=getbits(msg+i*2+6,13+16*j,8);
+		   } else {
+                      strcpy(message,"bad SMS encoding");
+		      LOGE("Bad encoding: %d",encoding);
+                      message+=16;
+                  }
                 *message=0;
             } else if (code == 11 && sublength == 1) {
               int msgs;
