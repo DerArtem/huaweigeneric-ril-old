@@ -1191,6 +1191,7 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 	int response[2];
 	char *line;
 
+/*
 //	if(signalStrength[0] == 0 && signalStrength[1] == 0) {
 		if(isgsm)
 			err = at_send_command_singleline("AT+CSQ", "+CSQ:", &p_response);
@@ -1220,12 +1221,16 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 		signalStrength[1] = response[1];
 		at_response_free(p_response);
 
-/*	} else {
+	} else {
 		LOGD("Sending stored CSQ values to RIL");
 		response[0] = signalStrength[0];
 		response[1] = signalStrength[1];
 	}
+
 */
+	response[0] = signalStrength[0];
+	response[1] = signalStrength[1];
+
 	LOGI("SignalStrength %d %d",response[0],response[1]);
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
 	return;
