@@ -1620,8 +1620,8 @@ static void requestRegistrationState(int request, void *data,
 		killConn("1");
 	}
 	asprintf(&responseStr[0], "%d", response[0]);
-	asprintf(&responseStr[1], "%d", response[1]);
-	asprintf(&responseStr[2], "%d", response[2]);
+	asprintf(&responseStr[1], "%x", response[1]);
+	asprintf(&responseStr[2], "%x", response[2]);
 	asprintf(&responseStr[3], "%d", response[3]);
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, responseStr, count*sizeof(char*));
@@ -1860,6 +1860,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	char *buffer;
 	long buffSize, len;
 	int retry = 10;
+//	char *response[3] = { "1", PPP_TTY_PATH, NULL};
 	char *response[2] = { "1", PPP_TTY_PATH};
 
 	apn = ((const char **)data)[2];
@@ -2196,7 +2197,7 @@ static void  requestEnterSimPin(void*  data, size_t  datalen, RIL_Token  t)
 		} else
 			goto error;
 
-		err = at_send_command_singleline(cmd, "+CPIN:", &p_response);
+		err = at_send_command_singleline(cmd, "+CREG:", &p_response);
 		free(cmd);
 
 		if (err < 0 || p_response->success == 0) {
@@ -2215,6 +2216,34 @@ error:
 	}
 }
 
+static void  requestChangeSimPin(void*  data, size_t  datalen, RIL_Token  t)
+{
+	ATResponse   *p_response = NULL;
+	int           err;
+	char*         cmd = NULL;
+	const char**  strings = (const char**)data;;
+
+	if(isgsm) {
+		if ( datalen == 2*sizeof(char*) )
+			asprintf(&cmd, "AT+CPWD=\"SC\",\"%s\",\"%s\"", strings[0], strings[1]);
+		else
+			goto error;
+
+		err = at_send_command(cmd, &p_response);
+		free(cmd);
+
+		if (err < 0 || p_response->success == 0) {
+error:
+			RIL_onRequestComplete(t, RIL_E_PASSWORD_INCORRECT, NULL, 0);
+		}
+		else
+			RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+
+		at_response_free(p_response);
+	} else {
+		RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+	}
+}
 
 static void unsolicitedNitzTime(const char * s)
 {
@@ -3762,12 +3791,16 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 			break;
 
 		case RIL_REQUEST_ENTER_SIM_PIN:
+			requestEnterSimPin(data, datalen, t);
+			break;
+		case RIL_REQUEST_CHANGE_SIM_PIN:
+			requestChangeSimPin(data, datalen, t);
+			break;
 		case RIL_REQUEST_ENTER_SIM_PUK:
 		case RIL_REQUEST_ENTER_SIM_PIN2:
 		case RIL_REQUEST_ENTER_SIM_PUK2:
-		case RIL_REQUEST_CHANGE_SIM_PIN:
 		case RIL_REQUEST_CHANGE_SIM_PIN2:
-			requestEnterSimPin(data, datalen, t);
+			requestNotSupported(t, request);
 			break;
 
 		case RIL_REQUEST_QUERY_CALL_WAITING:
