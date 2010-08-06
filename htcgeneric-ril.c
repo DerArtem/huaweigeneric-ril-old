@@ -776,8 +776,6 @@ error:
 
 static void requestGetPreferredNetworkType(void *data, size_t datalen, RIL_Token t)
 {
-#ifdef USE_IDCC_MODEM
-
 	int err;
 	ATResponse *p_response = NULL;
 	int response = 0;
@@ -785,7 +783,7 @@ static void requestGetPreferredNetworkType(void *data, size_t datalen, RIL_Token
 
 	if(isgsm)
 	{
-		err = at_send_command_singleline("AT+XRAT?", "+XRAT:", &p_response);
+		err = at_send_command_singleline("AT+CGAATT?", "+CGAATT:", &p_response);
 
 		if (err < 0 || p_response->success == 0) {
 			goto error;
@@ -799,84 +797,87 @@ static void requestGetPreferredNetworkType(void *data, size_t datalen, RIL_Token
 			goto error;
 		}
 
+		// Get third int in response
 		err = at_tok_nextint(&line, &response);
-
-		response = preferredRatToRilRat(response);
-
 		if (err < 0) {
 			goto error;
 		}
+		err = at_tok_nextint(&line, &response);
+		if (err < 0) {
+			goto error;
+		}
+		err = at_tok_nextint(&line, &response);
+		if (err < 0) {
+			goto error;
+		}
+		RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(int));
+		at_response_free(p_response);
+		return;
 	}
-	else
-	{
-		//CDMA
-		response = 1;
-	}
-
-	RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(int));
-	at_response_free(p_response);
+	LOGE("ERROR: requestGetPreferredNetworkType() failed - modem does not support command\n");
+	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	return;
-
 error:
 	at_response_free(p_response);
 	LOGE("ERROR: requestGetPreferredNetworkType() failed\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
-
-#else
-	LOGE("ERROR: requestGetPreferredNetworkType() failed - modem does not support command\n");
-	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
-#endif /* USE_IDCC_MODEM */
 }
 
 static void requestSetPreferredNetworkType(void *data, size_t datalen, RIL_Token t)
 {
-#ifdef USE_IDCC_MODEM
 	int err, rat;
 	ATResponse *p_response = NULL;
 	char * cmd = NULL;
 	const char *at_rat = NULL;
 
-	assert (datalen >= sizeof(int *));
-	rat = ((int *)data)[0];
-
-	switch (rat)
+	if(isgsm)
 	{
-		case 0: at_rat = "1,2"; break;/* Dual Mode - WCDMA preferred*/
-		case 1: at_rat = "0"; break;  /* GSM only */
-		case 2: at_rat = "2"; break;  /* WCDMA only */
-	}
+		assert (datalen >= sizeof(int *));
+		rat = ((int *)data)[0];
 
-	/* Need to unregister from NW before changing preferred RAT */
-	err = at_send_command("AT+COPS=2", NULL);
-	if (err < 0) goto error;
+		switch (rat) {
+			case 1: at_rat = "2,1,1"; break;  /* GSM only */
+			case 2: at_rat = "2,1,2"; break;  /* WsCDMA only */
+			default: at_rat = "2,1,0"; break; /* Dual Mode - WCDMA preferred*/
+		}
 
-	asprintf(&cmd, "AT+XRAT=%s", at_rat);
-	err = at_send_command(cmd, &p_response);
-	free(cmd);
+		/* Need to unregister from NW before changing preferred RAT */
+		err = at_send_command("AT+COPS=2", NULL);
+		if (err < 0) goto error;
 
-	if (err < 0|| p_response->success == 0) {
+		sleep(2); //Wait for the modem to finish
+
+		/* For some reason, without the bandset command, the CGAATT one fails. [mdrobnak] */
+		err = at_send_command("AT+BANDSET=0", NULL);
+		if (err < 0) goto error;
+
+		asprintf(&cmd, "AT+CGAATT=%s", at_rat);
+
+		err = at_send_command(cmd, &p_response);
+		free(cmd);
+
+		if (err < 0|| p_response->success == 0) {
 		goto error;
+		}
+
+		sleep(2); //Wait for the modem to finish
+
+		/* Register on the NW again */
+		err = at_send_command("AT+COPS=0", NULL);
+		if (err < 0) goto error;
+
+		RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, sizeof(int));
+		at_response_free(p_response);
+		return;
 	}
-
-	/* Register on the NW again */
-	err = at_send_command("AT+COPS=0", NULL);
-	if (err < 0) goto error;
-
-	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, sizeof(int));
-	at_response_free(p_response);
+        LOGE("ERROR: requestSetPreferredNetworkType() failed - command not supported by modem\n");
+        RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	return;
-
 error:
 	at_response_free(p_response);
 	LOGE("ERROR: requestSetPreferredNetworkType() failed\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
-
-#else
-	LOGE("ERROR: requestSetPreferredNetworkType() failed - command not supported by modem\n");
-	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
-#endif /* USE_IDCC_MODEM */
 }
-
 
 static void requestQueryFacilityLock(void *data, size_t datalen, RIL_Token t)
 {
