@@ -841,16 +841,6 @@ static void requestSetPreferredNetworkType(void *data, size_t datalen, RIL_Token
 			default: at_rat = "2,1,0"; break; /* Dual Mode - WCDMA preferred*/
 		}
 
-		/* Need to unregister from NW before changing preferred RAT */
-		err = at_send_command("AT+COPS=2", NULL);
-		if (err < 0) goto error;
-
-		sleep(2); //Wait for the modem to finish
-
-		/* For some reason, without the bandset command, the CGAATT one fails. [mdrobnak] */
-		err = at_send_command("AT+BANDSET=0", NULL);
-		if (err < 0) goto error;
-
 		asprintf(&cmd, "AT+CGAATT=%s", at_rat);
 
 		err = at_send_command(cmd, &p_response);
@@ -860,9 +850,7 @@ static void requestSetPreferredNetworkType(void *data, size_t datalen, RIL_Token
 		goto error;
 		}
 
-		sleep(2); //Wait for the modem to finish
-
-		/* Register on the NW again */
+		/* Trigger autoregister */
 		err = at_send_command("AT+COPS=0", NULL);
 		if (err < 0) goto error;
 
