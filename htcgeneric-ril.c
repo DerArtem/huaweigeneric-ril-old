@@ -840,6 +840,8 @@ static void requestSetPreferredNetworkType(void *data, size_t datalen, RIL_Token
 			case 2: at_rat = "2,1,2"; break;  /* WsCDMA only */
 			default: at_rat = "2,1,0"; break; /* Dual Mode - WCDMA preferred*/
 		}
+                err = at_send_command("AT+BANDSET=0", NULL);
+                if (err < 0) goto error;
 
 		asprintf(&cmd, "AT+CGAATT=%s", at_rat);
 
