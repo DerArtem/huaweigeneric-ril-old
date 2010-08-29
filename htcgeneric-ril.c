@@ -1555,14 +1555,17 @@ static void requestRegistrationState(int request, void *data,
 							case 3:
 								response[3] = 2;
 								break;
-								/* UTRAN - UMTS or better */
-							case 2:
-							case 4:
-							case 5:
-							case 6:
-							case 7:
-								response[3] = 3;
-								break;
+                                                               /* UTRAN - UMTS aka 3G */
+                                                        case 2:
+                                                        case 7:
+                                                                response[3] = 3;
+                                                                break;
+                                                                /* UTRAN with HSDPA and/or HSUPA aka Turbo-3G*/
+                                                        case 4:
+                                                        case 5:
+                                                        case 6:
+                                                                response[3] = 9;
+                                                                break;
 						}
 					}
 
@@ -1851,8 +1854,8 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	char *buffer;
 	long buffSize, len;
 	int retry = 10;
-//	char *response[3] = { "1", PPP_TTY_PATH, NULL};
-	char *response[2] = { "1", PPP_TTY_PATH};
+//	char *response[3] = { "1", PPP_TTY_PATH, NULL};			// donut&eclair
+	char *response[2] = { "1", PPP_TTY_PATH};			// froyo
 
 	apn = ((const char **)data)[2];
 	user = ((char **)data)[3];
