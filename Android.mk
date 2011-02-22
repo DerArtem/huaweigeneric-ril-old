@@ -6,7 +6,7 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
-    htcgeneric-ril.c \
+    huaweigeneric-ril.c \
     atchannel.c \
     misc.c \
     at_tok.c \
@@ -38,15 +38,15 @@ ifeq (foo,foo)
   #build shared library
   LOCAL_SHARED_LIBRARIES += \
 	libcutils libutils
-  LOCAL_LDLIBS += -lpthread 
+  LOCAL_LDLIBS += -lpthread
   LOCAL_CFLAGS += -DRIL_SHLIB 
-  LOCAL_MODULE:= libhtcgeneric-ril
+  LOCAL_MODULE:= libhuaweigeneric-ril
   LOCAL_PRELINK_MODULE := false
   include $(BUILD_SHARED_LIBRARY)
 else
   #build executable
   LOCAL_SHARED_LIBRARIES += \
 	libril
-  LOCAL_MODULE:= htcgeneric-ril
+  LOCAL_MODULE:= huaweigeneric-ril
   include $(BUILD_EXECUTABLE)
 endif
