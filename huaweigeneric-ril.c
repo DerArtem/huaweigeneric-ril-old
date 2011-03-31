@@ -1976,9 +1976,6 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
         	goto error;
 	}
 	
-	//if (system("pppd /dev/ttyUSB0 115200 nocrtscts usepeerdns debug updetach ipcp-accept-local ipcp-accept-remote defaultroute") < 0)
-	//	goto error;
-
 	sleep(2); // Allow time for ip-up to complete
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
