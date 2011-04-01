@@ -1,7 +1,7 @@
 
 The modules has still a few problems:
 
-* it required /system/etc/init.pppd-gprs for pppd.
+* it required /system/etc/init.gprs-pppd for pppd.
 	#!/system/bin/sh
 	PPPD_PID=
 
