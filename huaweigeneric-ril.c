@@ -615,7 +615,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
 	}
 
     // make sure pppd is still running, invalidate datacall if it isn't
-	if ((fd = open("/sys/class/net/ppp0",O_RDONLY)) > 0)
+	if ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) > 0)
     {
 		close(fd);
     }
@@ -2018,7 +2018,6 @@ static int killConn(char * cid)
 
 	LOGD("killConn");
 
-    //while ((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0)
    /* while ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) > 0)
     {
         if(i%5 == 0)
