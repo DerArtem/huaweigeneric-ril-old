@@ -1928,6 +1928,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 
 	//set up the pap/chap secrets file
 	sprintf(userpass, "%s * %s", user, pass);
+	/*	
 	if (0)
 	//if (0 != strcmp(userpass, userPassStatic))
 	{
@@ -1969,7 +1970,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		fprintf(pppconfig,"name %s\n",user);
 		fclose(pppconfig);
 		free(buffer);
-	}
+	}*/
 		
 	property_set("ctl.start", "pppd_gprs");
 	if (wait_for_property("init.svc.pppd_gprs", "running", 10) < 0) {
