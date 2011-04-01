@@ -1,7 +1,24 @@
 
 The modules has still a few problems:
 
-* it required /system/etc/pppd_gprs for pppd.
+* it required /system/etc/init.pppd-gprs for pppd.
+	#!/system/bin/sh
+	PPPD_PID=
+
+	/system/bin/setprop "net.gprs.ppp-exit" ""
+
+	/system/bin/log -t pppd "Starting pppd"
+
+	#/system/xbin/pppd $*
+	/system/bin/pppd /dev/ttyUSB0 115200 nocrtscts usepeerdns debug nodetach ipcp-accept-local ipcp-accept-remote defaultroute
+
+	PPPD_EXIT=$?
+	PPPD_PID=$!
+
+	/system/bin/log -t pppd "pppd exited with $PPPD_EXIT"
+
+	/system/bin/setprop "net.gprs.ppp-exit" "$PPPD_EXIT"
+
 
 * required modify init.rc add: 
 	on device-added-/dev/ttyUSB0
