@@ -34,6 +34,7 @@
 #include <sys/socket.h>
 #include <cutils/sockets.h>
 #include <termios.h>
+#include <cutils/properties.h>
 
 #define LOG_NDEBUG 0
 #define LOG_TAG "RIL"
@@ -77,7 +78,7 @@ static int getCardStatus(RIL_CardStatus_v6 **pp_card_status);
 static void freeCardStatus(RIL_CardStatus_v6 *p_card_status);
 static void onDataCallListChanged(void *param);
 static int killConn(char * cid);
-
+static int wait_for_property(const char *name, const char *desired_value, int maxwait);
 
 extern const char * requestToString(int request);
 
@@ -621,7 +622,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
 	}
 
     // make sure pppd is still running, invalidate datacall if it isn't
-	if ((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0)
+	if ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) > 0)
     {
 		close(fd);
     }
@@ -1913,6 +1914,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		err = at_send_command("AT+CGACT=0,1", NULL);
 		// Start data on PDP context 1
 		err = at_send_command("ATD*99***1#", &p_response);
+		//err = at_send_command("ATD*99#", &p_response);			
 		if (err < 0 || p_response->success == 0) {
 			at_response_free(p_response);
 			goto error;
@@ -1933,7 +1935,9 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 
 	//set up the pap/chap secrets file
 	sprintf(userpass, "%s * %s", user, pass);
-	if (0 != strcmp(userpass, userPassStatic))
+	/*	
+	if (0)
+	//if (0 != strcmp(userpass, userPassStatic))
 	{
 		strcpy (userPassStatic, userpass);
 		len = strlen(userpass);
@@ -1968,16 +1972,18 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		fclose(pppconfig);
 
-		pppconfig = fopen("/etc/ppp/options.ttyUSB0","w");
+		pppconfig = fopen("/system/etc/ppp/options.ttyUSB4","w");
 		fwrite(buffer,1,buffSize,pppconfig);
 		fprintf(pppconfig,"name %s\n",user);
 		fclose(pppconfig);
 		free(buffer);
+	}*/
+		
+	property_set("ctl.start", "pppd_gprs");
+	if (wait_for_property("init.svc.pppd_gprs", "running", 10) < 0) {
+        	goto error;
 	}
-
-	if (system("/system/bin/pppd /dev/ttyUSB0") < 0)
-		goto error;
-
+	
 	sleep(2); // Allow time for ip-up to complete
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
@@ -1987,6 +1993,27 @@ error:
 	LOGE("HERE WE RUN INTO AN ERROR\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 
+}
+
+static int wait_for_property(const char *name, const char *desired_value, int maxwait)
+{
+    char value[PROPERTY_VALUE_MAX] = {'\0'};
+    int maxnaps = maxwait / 1;
+
+    if (maxnaps < 1) {
+        maxnaps = 1;
+    }
+
+    while (maxnaps-- > 0) {
+        usleep(1000000);
+        if (property_get(name, value, NULL)) {
+            if (desired_value == NULL || 
+                    strcmp(value, desired_value) == 0) {
+                return 0;
+            }
+        }
+    }
+    return -1; /* failure */
 }
 
 static int killConn(char * cid)
@@ -1999,7 +2026,7 @@ static int killConn(char * cid)
 
 	LOGD("killConn");
 
-    while ((fd = open("/etc/ppp/ppp-gprs.pid",O_RDONLY)) > 0)
+   /* while ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) > 0)
     {
         if(i%5 == 0)
             system("killall pppd");
@@ -2008,6 +2035,11 @@ static int killConn(char * cid)
         i++;
 		close(fd);
         sleep(1);
+    }
+*/
+    property_set("ctl.stop", "pppd_gprs");
+    if (wait_for_property("init.svc.pppd_gprs", "stopped", 10) < 0) {
+        goto error;
     }
 
     LOGD("killall pppd finished");
@@ -2035,10 +2067,9 @@ static int killConn(char * cid)
                 at_response_free(p_response);
                 goto error;
             }
-        }
-        //at_send_command("ATH", NULL);
+        }    
     }
-
+	at_send_command("ATH", NULL);
 	return 0;
 
 error:
@@ -3941,7 +3972,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
  * Synchronous call from the RIL to us to return current radio state.
  * RADIO_STATE_UNAVAILABLE should be the initial state.
  */
-	static RIL_RadioState
+static RIL_RadioState
 currentState()
 {
 	return sState;
@@ -3972,7 +4003,7 @@ static const char * getVersion(void)
 	return "HTC Vogue Community RIL 1.6.0";
 }
 
-	static void
+static void
 setRadioState(RIL_RadioState newState)
 {
 	RIL_RadioState oldState;
@@ -4317,7 +4348,7 @@ static void initializeCallback(void *param)
 	at_send_command("AT+CLIR=0", NULL);
 
 	/*  bring up the device, also resets the stack. Don't do this! Handled elsewhere */
-//	at_send_command("AT+CFUN=1", NULL);
+	at_send_command("AT+CFUN=1", NULL);
 
 	if(isgsm) {
 		/*  Call Waiting notifications */
@@ -4599,12 +4630,13 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
 				break;
 
 			case 'd':
-				s_device_path = "/dev/ttyUSB2";
+				//s_device_path = "/dev/ttyUSB2";
+				s_device_path = optarg;
 				LOGI("Opening tty device %s\n", s_device_path);
 				break;
 
 			case 's':
-				s_device_path   = optarg;
+				s_device_path = optarg;
 				s_device_socket = 1;
 				LOGI("Opening socket %s\n", s_device_path);
 				break;
@@ -4644,7 +4676,8 @@ int main (int argc, char **argv)
 				break;
 
 			case 'd':
-				s_device_path = "/dev/ttyUSB2";
+				//s_device_path = "/dev/ttyUSB2";
+				s_device_path   = optarg;
 				LOGI("Opening tty device %s\n", s_device_path);
 				break;
 
