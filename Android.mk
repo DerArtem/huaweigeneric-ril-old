@@ -34,6 +34,8 @@ ifeq ($(TARGET_PRODUCT),dream)
   LOCAL_CFLAGS += -DPOLL_CALL_STATE -DUSE_QMI
 endif
 
+LOCAL_MODULE_TAGS := optional
+
 ifeq (foo,foo)
   #build shared library
   LOCAL_SHARED_LIBRARIES += \
