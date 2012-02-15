@@ -78,7 +78,6 @@ static int getCardStatus(RIL_CardStatus_v6 **pp_card_status);
 static void freeCardStatus(RIL_CardStatus_v6 *p_card_status);
 static void onDataCallListChanged(void *param);
 static int killConn(char * cid);
-static int wait_for_property(const char *name, const char *desired_value, int maxwait);
 
 extern const char * requestToString(int request);
 
@@ -141,7 +140,6 @@ static int isgsm=0;
 static char erisystem[50];
 static char *callwaiting_num;
 static int countValidCalls=0;
-static int signalStrength[2];
 
 static void handle_cdma_ccwa (const char *s)
 {
@@ -848,6 +846,8 @@ static void requestSetPreferredNetworkType(void *data, size_t datalen, RIL_Token
 
 	if(isgsm)
 	{
+		RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, sizeof(int));
+		return;
 		assert (datalen >= sizeof(int *));
 		rat = ((int *)data)[0];
 
@@ -1196,50 +1196,40 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 {
 	ATResponse *p_response = NULL;
 	int err;
-	int response[2];
 	char *line;
+	int ber;
+        int signalStrength;
+        RIL_SignalStrength_v6 curSignalStrength;
 
-	if(signalStrength[0] == 0 && signalStrength[1] == 0) {
-		if(isgsm)
-			err = at_send_command_singleline("AT+CSQ", "+CSQ:", &p_response);
-		else
-			err = at_send_command("AT+CSQ=1", &p_response);
+	err = at_send_command_singleline("AT+CSQ", "+CSQ:", &p_response);
 
-		if (err < 0 || p_response->success == 0) {
-			RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
-			goto error;
-		}
-
-		line = p_response->p_intermediates->line;
-
-		err = at_tok_start(&line);
-		if (err < 0) goto error;
-
-		err = at_tok_nextint(&line, &(response[0]));
-		if (err < 0) goto error;
-
-		err = at_tok_nextint(&line, &(response[1]));
-		if (err < 0) goto error;
-		if(!isgsm) {
-//			response[0]=(response[0]*31)/5;
-//			response[1]=99;
-		}
-		signalStrength[0] = response[0];
-		signalStrength[1] = response[1];
-		at_response_free(p_response);
-
-	} else {
-		LOGD("Sending stored CSQ values to RIL");
-		response[0] = signalStrength[0];
-		response[1] = signalStrength[1];
+	if (err < 0 || p_response->success == 0) {
+		RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+		goto error;
 	}
 
-	response[0] = signalStrength[0];
-	response[1] = signalStrength[1];
+	line = p_response->p_intermediates->line;
 
-	LOGI("SignalStrength %d %d",response[0],response[1]);
-	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
-	return;
+	err = at_tok_start(&line);
+	if (err < 0) goto error;
+
+	err = at_tok_nextint(&line, &signalStrength);
+	if (err < 0) goto error;
+
+	err = at_tok_nextint(&line, &ber);
+	if (err < 0) goto error;
+	if(!isgsm) {
+		signalStrength=(signalStrength*31)/5;
+		ber=99;
+	}
+	at_response_free(p_response);
+
+        curSignalStrength.GW_SignalStrength.signalStrength = signalStrength;
+        curSignalStrength.GW_SignalStrength.bitErrorRate = ber;
+
+	LOGI("SignalStrength %d BER: %d", signalStrength, ber);
+        RIL_onUnsolicitedResponse(RIL_UNSOL_SIGNAL_STRENGTH, &curSignalStrength, sizeof(curSignalStrength));
+        return;
 
 error:
 	LOGE("requestSignalStrength must never return an error when radio is on");
@@ -1896,8 +1886,10 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 
 	//Make sure there is no existing connection or pppd instance running
 	char * cid = response[0];
-	if(killConn(cid) < 0)
+	if(killConn(cid) < 0) {
+		LOGE("killConn Error!\n");
 		goto error;
+	}
 
 	if(isgsm) {
 		asprintf(&cmd, "AT+CGDCONT=1,\"IP\",\"%s\",,0,0", apn);
@@ -1920,6 +1912,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		}
 		at_response_free(p_response);
+		LOGI("ATD sent!!!\n");
 		sleep(2); //Wait for the modem to finish
 	} else {
 		//CDMA
@@ -1935,6 +1928,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 
 	//set up the pap/chap secrets file
 	sprintf(userpass, "%s * %s", user, pass);
+	LOGI("Using username: %s\n", userpass);
 	/*	
 	if (0)
 	//if (0 != strcmp(userpass, userPassStatic))
@@ -1978,42 +1972,30 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		fclose(pppconfig);
 		free(buffer);
 	}*/
-		
-	property_set("ctl.start", "pppd_gprs");
-	if (wait_for_property("init.svc.pppd_gprs", "running", 10) < 0) {
-        	goto error;
-	}
-	
-	sleep(2); // Allow time for ip-up to complete
 
-	RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
+	system("/system/bin/pppd /dev/ttyUSB0 115200 nocrtscts usepeerdns debug ipcp-accept-local ipcp-accept-remote defaultroute");
+
+        while ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) < 0)
+        {
+                if(i>30) {
+			LOGE("Could not detect ppp0 - giving up!\n");
+                        goto error;
+		}
+                i++;
+                sleep(1);
+        }
+	close(fd);
+
+	//requestOrSendDataCallList(&t);
+
+	//RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
+	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, sizeof(int));
 	return;
 
 error:
 	LOGE("HERE WE RUN INTO AN ERROR\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 
-}
-
-static int wait_for_property(const char *name, const char *desired_value, int maxwait)
-{
-    char value[PROPERTY_VALUE_MAX] = {'\0'};
-    int maxnaps = maxwait / 1;
-
-    if (maxnaps < 1) {
-        maxnaps = 1;
-    }
-
-    while (maxnaps-- > 0) {
-        usleep(1000000);
-        if (property_get(name, value, NULL)) {
-            if (desired_value == NULL || 
-                    strcmp(value, desired_value) == 0) {
-                return 0;
-            }
-        }
-    }
-    return -1; /* failure */
 }
 
 static int killConn(char * cid)
@@ -2026,23 +2008,17 @@ static int killConn(char * cid)
 
 	LOGD("killConn");
 
-   /* while ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) > 0)
-    {
-        if(i%5 == 0)
-            system("killall pppd");
-        if(i>25)
-            goto error;
-        i++;
-		close(fd);
-        sleep(1);
-    }
-*/
-    property_set("ctl.stop", "pppd_gprs");
-    if (wait_for_property("init.svc.pppd_gprs", "stopped", 10) < 0) {
-        goto error;
-    }
-
-    LOGD("killall pppd finished");
+	while ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) > 0)
+	{
+		if(i%5 == 0)
+			system("killall pppd");
+		if(i>25)
+			goto error;
+		i++;
+			close(fd);
+		sleep(2);
+	}
+	LOGD("killall pppd finished");
 
     if (isgsm) {
         asprintf(&cmd, "AT+CGACT=0,%s", cid);
@@ -2359,7 +2335,8 @@ error:
 static void unsolicitedRSSI(const char * s)
 {
 	int err;
-	int response[2];
+	int signalStrength;
+	RIL_SignalStrength_v6 curSignalStrength;
 	char * line = NULL;
 
 	line = strdup(s);
@@ -2367,14 +2344,15 @@ static void unsolicitedRSSI(const char * s)
 	err = at_tok_start(&line);
 	if (err < 0) goto error;
 
-	err = at_tok_nextint(&line, &(response[0]));
+	err = at_tok_nextint(&line, &signalStrength);
 	if (err < 0) goto error;
 
-	signalStrength[0]=response[0];
-	signalStrength[1]=99;
-	LOGI("Signal Strength %d",response[0]);
+	curSignalStrength.GW_SignalStrength.signalStrength = signalStrength;
+	curSignalStrength.GW_SignalStrength.bitErrorRate = 99;
 
-	RIL_onUnsolicitedResponse(RIL_UNSOL_SIGNAL_STRENGTH, response, sizeof(response));
+	LOGI("SignalStrength %d", signalStrength);
+
+	RIL_onUnsolicitedResponse(RIL_UNSOL_SIGNAL_STRENGTH, &curSignalStrength, sizeof(curSignalStrength));
 	return;
 
 error:
