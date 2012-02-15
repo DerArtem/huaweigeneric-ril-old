@@ -1862,8 +1862,8 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	char *buffer;
 	long buffSize, len;
 	int retry = 10;
-//	char *response[3] = { "1", PPP_TTY_PATH, NULL};			// donut&eclair
-	char *response[2] = { "1", PPP_TTY_PATH};			// froyo
+	int n = 1;
+	RIL_Data_Call_Response_v6 *responses;
 
 	apn = ((const char **)data)[2];
 	user = ((char **)data)[3];
@@ -1885,8 +1885,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	LOGD("requesting data connection to APN '%s'\n", apn);
 
 	//Make sure there is no existing connection or pppd instance running
-	char * cid = response[0];
-	if(killConn(cid) < 0) {
+	if(killConn("1") < 0) {
 		LOGE("killConn Error!\n");
 		goto error;
 	}
@@ -1986,10 +1985,23 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
         }
 	close(fd);
 
-	//requestOrSendDataCallList(&t);
+	responses = alloca(n * sizeof(RIL_Data_Call_Response_v6));
 
-	//RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
-	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, sizeof(int));
+	for (i = 0; i < n; i++) {
+		responses[i].status = 0;
+		responses[i].suggestedRetryTime = -1;
+		responses[i].cid = 1;
+		responses[i].active = 2;
+		responses[i].type = "PPP";
+		responses[i].ifname = PPP_TTY_PATH;
+		responses[i].addresses = "123.123.123.123";
+		responses[i].dnses = "8.8.8.8";
+		responses[i].gateways = "";
+	}
+
+	RIL_onRequestComplete(t, RIL_E_SUCCESS, responses,
+                                n * sizeof(RIL_Data_Call_Response_v6));
+
 	return;
 
 error:
