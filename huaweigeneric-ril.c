@@ -433,6 +433,7 @@ static void requestRadioPower(void *data, size_t datalen, RIL_Token t)
 	assert (datalen >= sizeof(int *));
 	onOff = ((int *)data)[0];
 
+/*
 	if (onOff == 0 && sState != RADIO_STATE_OFF) {
 		if(isgsm)
 			err = at_send_command("AT+CFUN=0", &p_response);
@@ -454,6 +455,7 @@ static void requestRadioPower(void *data, size_t datalen, RIL_Token t)
 		}
 		setRadioState(RADIO_STATE_SIM_NOT_READY);
 	}
+*/
 
 	at_response_free(p_response);
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
@@ -1843,6 +1845,27 @@ error:
 	at_response_free(p2_response);
 }
 
+static int wait_for_property(const char *name, const char *desired_value, int maxwait)
+{
+    char value[PROPERTY_VALUE_MAX] = {'\0'};
+    int maxnaps = maxwait / 1;
+
+    if (maxnaps < 1) {
+        maxnaps = 1;
+    }
+
+    while (maxnaps-- > 0) {
+        usleep(1000000);
+        if (property_get(name, value, NULL)) {
+            if (desired_value == NULL ||
+                    strcmp(value, desired_value) == 0) {
+                return 0;
+            }
+        }
+    }
+    return -1; /* failure */
+}
+
 static char userPassStatic[512] = "preload";
 
 static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
@@ -1864,6 +1887,11 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	int retry = 10;
 	int n = 1;
 	RIL_Data_Call_Response_v6 *responses;
+	char ppp_dnses[(PROPERTY_VALUE_MAX * 2) + 3] = {'\0'};
+	char ppp_local_ip[PROPERTY_VALUE_MAX] = {'\0'};
+	char ppp_dns1[PROPERTY_VALUE_MAX] = {'\0'};
+	char ppp_dns2[PROPERTY_VALUE_MAX] = {'\0'};
+	char ppp_gw[PROPERTY_VALUE_MAX] = {'\0'};
 
 	apn = ((const char **)data)[2];
 	user = ((char **)data)[3];
@@ -1974,30 +2002,29 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 
 	system("/system/bin/pppd /dev/ttyUSB0 115200 nocrtscts usepeerdns debug ipcp-accept-local ipcp-accept-remote defaultroute");
 
-        while ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) < 0)
-        {
-                if(i>30) {
-			LOGE("Could not detect ppp0 - giving up!\n");
-                        goto error;
-		}
-                i++;
-                sleep(1);
-        }
-	close(fd);
+	if (wait_for_property("net.ppp0.local-ip", NULL, 10) < 0) {
+		LOGE("Timeout waiting net.ppp0.local-ip - giving up!\n");
+		goto error;
+	}
+
+	property_get("net.ppp0.local-ip", ppp_local_ip, NULL);
+	property_get("net.ppp0.dns1", ppp_dns1, NULL);
+	property_get("net.ppp0.dns2", ppp_dns2, NULL);
+	property_get("net.ppp0.gw", ppp_gw, NULL);
+	sprintf(ppp_dnses, "%s %s", ppp_dns1, ppp_dns2);
+
+	LOGI("Got net.ppp0.local-ip: %s\n", ppp_local_ip);
 
 	responses = alloca(n * sizeof(RIL_Data_Call_Response_v6));
-
-	for (i = 0; i < n; i++) {
-		responses[i].status = 0;
-		responses[i].suggestedRetryTime = -1;
-		responses[i].cid = 1;
-		responses[i].active = 2;
-		responses[i].type = "PPP";
-		responses[i].ifname = PPP_TTY_PATH;
-		responses[i].addresses = "123.123.123.123";
-		responses[i].dnses = "8.8.8.8";
-		responses[i].gateways = "";
-	}
+	responses[0].status = 0;
+	responses[0].suggestedRetryTime = -1;
+	responses[0].cid = 1;
+	responses[0].active = 2;
+	responses[0].type = "PPP";
+	responses[0].ifname = PPP_TTY_PATH;
+	responses[0].addresses = ppp_local_ip;
+	responses[0].dnses = ppp_dnses;
+	responses[0].gateways = ppp_gw;
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, responses,
                                 n * sizeof(RIL_Data_Call_Response_v6));
@@ -2833,7 +2860,7 @@ static void requestResetRadio(RIL_Token t)
 {
 	int err = 0;
 
-	err = at_send_command("AT+CFUN=16", NULL);
+	err = at_send_command("AT+CFUN=1,1", NULL);
 	if(err < 0)
 		RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	else
@@ -4281,11 +4308,12 @@ static void initializeCallback(void *param)
 	at_handshake();
 
 	/* make sure the radio is off */
+/*
 	if(isgsm)
 		at_send_command("AT+CFUN=0", NULL);
 	else
 		at_send_command("AT+CFUN=66", NULL);
-
+*/
 
 	setRadioState (RADIO_STATE_OFF);
 
@@ -4338,7 +4366,7 @@ static void initializeCallback(void *param)
 	at_send_command("AT+CLIR=0", NULL);
 
 	/*  bring up the device, also resets the stack. Don't do this! Handled elsewhere */
-	at_send_command("AT+CFUN=1", NULL);
+//	at_send_command("AT+CFUN=1", NULL);
 
 	if(isgsm) {
 		/*  Call Waiting notifications */
