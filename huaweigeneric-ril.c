@@ -1226,8 +1226,18 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 	}
 	at_response_free(p_response);
 
-        curSignalStrength.GW_SignalStrength.signalStrength = signalStrength;
-        curSignalStrength.GW_SignalStrength.bitErrorRate = ber;
+	curSignalStrength.GW_SignalStrength.signalStrength = signalStrength;
+	curSignalStrength.GW_SignalStrength.bitErrorRate = ber;
+	curSignalStrength.CDMA_SignalStrength.dbm = 0;
+	curSignalStrength.CDMA_SignalStrength.ecio = 0;
+	curSignalStrength.EVDO_SignalStrength.dbm = 0;
+	curSignalStrength.EVDO_SignalStrength.ecio = 0;
+	curSignalStrength.EVDO_SignalStrength.signalNoiseRatio = 0;
+	curSignalStrength.LTE_SignalStrength.signalStrength = 0;
+	curSignalStrength.LTE_SignalStrength.rsrp = 0;
+	curSignalStrength.LTE_SignalStrength.rsrq = 0;
+	curSignalStrength.LTE_SignalStrength.rssnr = 0;
+	curSignalStrength.LTE_SignalStrength.cqi = 0;
 
 	LOGI("SignalStrength %d BER: %d", signalStrength, ber);
         RIL_onUnsolicitedResponse(RIL_UNSOL_SIGNAL_STRENGTH, &curSignalStrength, sizeof(curSignalStrength));
@@ -2388,6 +2398,16 @@ static void unsolicitedRSSI(const char * s)
 
 	curSignalStrength.GW_SignalStrength.signalStrength = signalStrength;
 	curSignalStrength.GW_SignalStrength.bitErrorRate = 99;
+	curSignalStrength.CDMA_SignalStrength.dbm = 0;
+	curSignalStrength.CDMA_SignalStrength.ecio = 0;
+	curSignalStrength.EVDO_SignalStrength.dbm = 0;
+	curSignalStrength.EVDO_SignalStrength.ecio = 0;
+	curSignalStrength.EVDO_SignalStrength.signalNoiseRatio = 0;
+	curSignalStrength.LTE_SignalStrength.signalStrength = 0;
+	curSignalStrength.LTE_SignalStrength.rsrp = 0;
+	curSignalStrength.LTE_SignalStrength.rsrq = 0;
+	curSignalStrength.LTE_SignalStrength.rssnr = 0;
+	curSignalStrength.LTE_SignalStrength.cqi = 0;
 
 	LOGI("SignalStrength %d", signalStrength);
 
