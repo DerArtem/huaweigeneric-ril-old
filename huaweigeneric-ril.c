@@ -155,7 +155,7 @@ static void handle_cdma_ccwa (const char *s)
 		return;
 	callwaiting_num = strdup(callwaiting_num);
 	free(line);
-	LOGE("successfully set callwaiting_numn");
+	ALOGE("successfully set callwaiting_numn");
 }
 
 extern char** cdma_to_gsmpdu(const char *);
@@ -281,7 +281,7 @@ static int callFromCLCCLine(char *line, RIL_Call *p_call)
 	return 0;
 
 error:
-	LOGE("invalid CLCC line\n");
+	ALOGE("invalid CLCC line\n");
 	return -1;
 }
 
@@ -351,9 +351,9 @@ static void onRadioPowerOn()
 #endif
 	if(isgsm)
 	{
-		LOGD("onRadioPowerOn1");
+		ALOGD("onRadioPowerOn1");
 		sleep(10);
-		LOGD("onRadioPowerOn2");
+		ALOGD("onRadioPowerOn2");
 		at_send_command("ATE0", NULL);
 		at_send_command("AT+CLIP=1", NULL);
 		at_send_command("AT+CLIR=0", NULL);
@@ -678,7 +678,7 @@ static void requestBasebandVersion(void *data, size_t datalen, RIL_Token t)
 
 error:
 	at_response_free(p_response);
-	LOGE("ERROR: requestBasebandVersion failed\n");
+	ALOGE("ERROR: requestBasebandVersion failed\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
@@ -719,7 +719,7 @@ static void requestQueryNetworkSelectionMode(
 
 error:
 	at_response_free(p_response);
-	LOGE("requestQueryNetworkSelectionMode must never return error when radio is on");
+	ALOGE("requestQueryNetworkSelectionMode must never return error when radio is on");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
@@ -783,7 +783,7 @@ static void requestQueryAvailableNetworks(void *data, size_t datalen, RIL_Token 
 
 error:
 	at_response_free(p_response);
-	LOGE("ERROR - requestQueryAvailableNetworks() failed");
+	ALOGE("ERROR - requestQueryAvailableNetworks() failed");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
@@ -830,12 +830,12 @@ static void requestGetPreferredNetworkType(void *data, size_t datalen, RIL_Token
 		at_response_free(p_response);
 		return;
 	}
-	LOGE("ERROR: requestGetPreferredNetworkType() failed - modem does not support command\n");
+	ALOGE("ERROR: requestGetPreferredNetworkType() failed - modem does not support command\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	return;
 error:
 	at_response_free(p_response);
-	LOGE("ERROR: requestGetPreferredNetworkType() failed\n");
+	ALOGE("ERROR: requestGetPreferredNetworkType() failed\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
@@ -878,12 +878,12 @@ static void requestSetPreferredNetworkType(void *data, size_t datalen, RIL_Token
 		at_response_free(p_response);
 		return;
 	}
-        LOGE("ERROR: requestSetPreferredNetworkType() failed - command not supported by modem\n");
+        ALOGE("ERROR: requestSetPreferredNetworkType() failed - command not supported by modem\n");
         RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	return;
 error:
 	at_response_free(p_response);
-	LOGE("ERROR: requestSetPreferredNetworkType() failed\n");
+	ALOGE("ERROR: requestSetPreferredNetworkType() failed\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
@@ -897,7 +897,7 @@ static void requestQueryFacilityLock(void *data, size_t datalen, RIL_Token t)
 	char * facility_password = NULL;
 	char * facility_class = NULL;
 
-	LOGD("FACILITY");
+	ALOGD("FACILITY");
 	assert (datalen >=  (3 * sizeof(char **)));
 
 	facility_string   = ((char **)data)[0];
@@ -933,7 +933,7 @@ static void requestQueryFacilityLock(void *data, size_t datalen, RIL_Token t)
 
 error:
 	at_response_free(p_response);
-	LOGE("ERROR: requestQueryFacilityLock() failed\n");
+	ALOGE("ERROR: requestQueryFacilityLock() failed\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
@@ -1072,7 +1072,7 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 					&& p_calls[i].state == RIL_CALL_ACTIVE
 					&& s_repollCallsCount < REPOLL_CALLS_COUNT_MAX
 			   ) {
-				LOGI(
+				ALOGI(
 						"Hit WORKAROUND_ERRONOUS_ANSWER case."
 						" Repoll count: %d\n", s_repollCallsCount);
 				s_repollCallsCount++;
@@ -1084,9 +1084,9 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 	s_expectAnswer = 0;
 	s_repollCallsCount = 0;
 #endif /*WORKAROUND_ERRONEOUS_ANSWER*/
-	LOGI("Calls=%d,Valid=%d\n",countCalls,countValidCalls);
+	ALOGI("Calls=%d,Valid=%d\n",countCalls,countValidCalls);
 	if(countValidCalls==0) { // close audio if no voice calls.
-		LOGI("Audio Close\n");
+		ALOGI("Audio Close\n");
 		//writesys("audio","5");
 	}
 
@@ -1239,12 +1239,12 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
 	curSignalStrength.LTE_SignalStrength.rssnr = 0;
 	curSignalStrength.LTE_SignalStrength.cqi = 0;
 
-	LOGI("SignalStrength %d BER: %d", signalStrength, ber);
+	ALOGI("SignalStrength %d BER: %d", signalStrength, ber);
         RIL_onUnsolicitedResponse(RIL_UNSOL_SIGNAL_STRENGTH, &curSignalStrength, sizeof(curSignalStrength));
         return;
 
 error:
-	LOGE("requestSignalStrength must never return an error when radio is on");
+	ALOGE("requestSignalStrength must never return an error when radio is on");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	at_response_free(p_response);
 }
@@ -1272,7 +1272,7 @@ static void requestDtmfStart(void *data, size_t datalen, RIL_Token t)
 	return;
 
 error:
-	LOGE("ERROR: requestDtmfStart failed");
+	ALOGE("ERROR: requestDtmfStart failed");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 
 }
@@ -1291,7 +1291,7 @@ static void requestDtmfStop(void *data, size_t datalen, RIL_Token t)
 	return;
 
 error:
-	LOGE("ERROR: requestDtmfStop failed");
+	ALOGE("ERROR: requestDtmfStop failed");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 
 }
@@ -1314,7 +1314,7 @@ static void requestSetMute(void *data, size_t datalen, RIL_Token t)
 	return;
 
 error:
-	LOGE("ERROR: requestSetMute failed");
+	ALOGE("ERROR: requestSetMute failed");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 
 }
@@ -1349,7 +1349,7 @@ static void requestGetMute(void *data, size_t datalen, RIL_Token t)
 	return;
 
 error:
-	LOGE("ERROR: requestGetMute failed");
+	ALOGE("ERROR: requestGetMute failed");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	at_response_free(p_response);
 }
@@ -1411,7 +1411,7 @@ static void requestScreenState(void *data, size_t datalen, RIL_Token t)
 	return;
 
 error:
-	LOGE("ERROR: requestScreenState failed");
+	ALOGE("ERROR: requestScreenState failed");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
@@ -1643,7 +1643,7 @@ static void requestRegistrationState(int request, void *data,
 
 	return;
 error:
-	LOGE("requestRegistrationState must never return an error when radio is on");
+	ALOGE("requestRegistrationState must never return an error when radio is on");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	at_response_free(p_response);
 }
@@ -1722,7 +1722,7 @@ static void requestOperator(void *data, size_t datalen, RIL_Token t)
 	return;
 
 error:
-	LOGE("requestOperator must not return error when radio is on");
+	ALOGE("requestOperator must not return error when radio is on");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	at_response_free(p_response);
 }
@@ -1751,7 +1751,7 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t, int request)
 	pdu = ((const char **)data)[1];
 
 	tpLayerLength = strlen(pdu)/2;
-	LOGI("SMSC=%s  PDU=%s",testSmsc,pdu);
+	ALOGI("SMSC=%s  PDU=%s",testSmsc,pdu);
 	// "NULL for default SMSC"
 	if (testSmsc == NULL) {
 		if(isgsm){
@@ -1798,12 +1798,12 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t, int request)
 	}
 	else
 		strcpy(smsc,testSmsc);
-	LOGI("SMSC=%s  PDU=%s",smsc,pdu);
+	ALOGI("SMSC=%s  PDU=%s",smsc,pdu);
 
 	if(!isgsm) {
 		strcpy(sendstr,"00");
 		strcat(sendstr,pdu);
-		LOGI("GSM PDU=%s",pdu);
+		ALOGI("GSM PDU=%s",pdu);
 		cdma=gsm_to_cdmapdu(sendstr);
 		tpLayerLength = strlen(cdma)/2;
 	}
@@ -1920,11 +1920,11 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	} else
 		pass = "dummy";
 
-	LOGD("requesting data connection to APN '%s'\n", apn);
+	ALOGD("requesting data connection to APN '%s'\n", apn);
 
 	//Make sure there is no existing connection or pppd instance running
 	if(killConn("1") < 0) {
-		LOGE("killConn Error!\n");
+		ALOGE("killConn Error!\n");
 		goto error;
 	}
 
@@ -1949,7 +1949,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 			goto error;
 		}
 		at_response_free(p_response);
-		LOGI("ATD sent!!!\n");
+		ALOGI("ATD sent!!!\n");
 		sleep(2); //Wait for the modem to finish
 	} else {
 		//CDMA
@@ -1965,7 +1965,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 
 	//set up the pap/chap secrets file
 	sprintf(userpass, "%s * %s", user, pass);
-	LOGI("Using username: %s\n", userpass);
+	ALOGI("Using username: %s\n", userpass);
 	/*	
 	if (0)
 	//if (0 != strcmp(userpass, userPassStatic))
@@ -2013,7 +2013,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	system("/system/bin/pppd /dev/ttyUSB0 115200 nocrtscts usepeerdns debug ipcp-accept-local ipcp-accept-remote defaultroute");
 
 	if (wait_for_property("net.ppp0.local-ip", NULL, 10) < 0) {
-		LOGE("Timeout waiting net.ppp0.local-ip - giving up!\n");
+		ALOGE("Timeout waiting net.ppp0.local-ip - giving up!\n");
 		goto error;
 	}
 
@@ -2023,7 +2023,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	property_get("net.ppp0.gw", ppp_gw, NULL);
 	sprintf(ppp_dnses, "%s %s", ppp_dns1, ppp_dns2);
 
-	LOGI("Got net.ppp0.local-ip: %s\n", ppp_local_ip);
+	ALOGI("Got net.ppp0.local-ip: %s\n", ppp_local_ip);
 
 	responses = alloca(n * sizeof(RIL_Data_Call_Response_v6));
 	responses[0].status = 0;
@@ -2042,7 +2042,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	return;
 
 error:
-	LOGE("HERE WE RUN INTO AN ERROR\n");
+	ALOGE("HERE WE RUN INTO AN ERROR\n");
 	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 
 }
@@ -2055,7 +2055,7 @@ static int killConn(char * cid)
 	int i=0;
 	ATResponse *p_response = NULL;
 
-	LOGD("killConn");
+	ALOGD("killConn");
 
 	while ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) > 0)
 	{
@@ -2067,7 +2067,7 @@ static int killConn(char * cid)
 			close(fd);
 		sleep(2);
 	}
-	LOGD("killall pppd finished");
+	ALOGD("killall pppd finished");
 
     if (isgsm) {
         asprintf(&cmd, "AT+CGACT=0,%s", cid);
@@ -2105,7 +2105,7 @@ static void requestDeactivateDataCall(void *data, size_t datalen, RIL_Token t)
 {
 	char * cid;
 
-	LOGD("requestDeactivateDataCall()");
+	ALOGD("requestDeactivateDataCall()");
 
 	cid = ((char **)data)[0];
 	if (killConn(cid) < 0)
@@ -2130,7 +2130,7 @@ static void requestSMSAcknowledge(void *data, size_t datalen, RIL_Token t)
 	} else if (ackSuccess == 0)  {
 		err = at_send_command("AT+CNMA=2", NULL);
 	} else {
-		LOGE("unsupported arg to RIL_REQUEST_SMS_ACKNOWLEDGE\n");
+		ALOGE("unsupported arg to RIL_REQUEST_SMS_ACKNOWLEDGE\n");
 		goto error;
 	}
 
@@ -2191,7 +2191,7 @@ static void  requestSIM_IO(void *data, size_t datalen, RIL_Token t)
 	} else {
 		//CDMA
 		if(p_args->fileid != 0x6f40) {
-			LOGE("SIM IO Request: %s\n", cmd);
+			ALOGE("SIM IO Request: %s\n", cmd);
 			RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
 			at_response_free(p_response);
 			free(cmd);
@@ -2377,7 +2377,7 @@ static void unsolicitedNitzTime(const char * s)
 	}
 
 error:
-	LOGE("Invalid NITZ line %s\n", s);
+	ALOGE("Invalid NITZ line %s\n", s);
 }
 
 
@@ -2409,20 +2409,20 @@ static void unsolicitedRSSI(const char * s)
 	curSignalStrength.LTE_SignalStrength.rssnr = 0;
 	curSignalStrength.LTE_SignalStrength.cqi = 0;
 
-	LOGI("SignalStrength %d", signalStrength);
+	ALOGI("SignalStrength %d", signalStrength);
 
 	RIL_onUnsolicitedResponse(RIL_UNSOL_SIGNAL_STRENGTH, &curSignalStrength, sizeof(curSignalStrength));
 	return;
 
 error:
 	/* The notification was for a battery event - do not send a msg to upper layers */
-	LOGI("Error getting Signal Strength");
+	ALOGI("Error getting Signal Strength");
 	return;
 }
 
 static void requestNotSupported(RIL_Token t, int request)
 {
-	LOGD("Request %d is unsupported", request);
+	ALOGD("Request %d is unsupported", request);
 	RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
 	return;
 }
@@ -2706,7 +2706,7 @@ static void  unsolicitedUSSD(const char *s)
 	char *outputmessage;
 	char *responseStr[2];
 
-	LOGD("unsolicitedUSSD %s\n",s);
+	ALOGD("unsolicitedUSSD %s\n",s);
 
 	linestart=line=strdup(s);
 	err = at_tok_start(&line);
@@ -2736,7 +2736,7 @@ static void  unsolicitedUSSD(const char *s)
 	return;
 
 error:
-	LOGE("unexpectedUSSD error\n");
+	ALOGE("unexpectedUSSD error\n");
 }
 
 static void  unsolicitedERI(const char *s) {
@@ -3313,10 +3313,10 @@ static void requestOEMHookStrings(void * data, size_t datalen, RIL_Token t)
 	}
 /*
 	if(isgsm) {
-		LOGD("got OEM_HOOK_STRINGS: 0x%8p %lu", data, (long)datalen);
+		ALOGD("got OEM_HOOK_STRINGS: 0x%8p %lu", data, (long)datalen);
 
 		for (i = (datalen / sizeof (char *)), cur = (const char **)data; i > 0; cur++, i --){
-			LOGD("> '%s'", *cur);
+			ALOGD("> '%s'", *cur);
 		}
 
 		// echo back strings
@@ -3666,7 +3666,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 	ATResponse *p_response;
 	int err;
 
-	LOGD("onRequest: %s (%d)", requestToString(request), request);
+	ALOGD("onRequest: %s (%d)", requestToString(request), request);
 
 	/* Ignore all requests except RIL_REQUEST_GET_SIM_STATUS
 	 * when RADIO_STATE_UNAVAILABLE.
@@ -4512,7 +4512,7 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 				NULL, 0);
 		RIL_requestTimedCallback (onDataCallListChanged, NULL, NULL);
 	} else if (strStartsWith(s, "+CMT:")) {
-		LOGD("GSM_PDU=%s\n",sms_pdu);
+		ALOGD("GSM_PDU=%s\n",sms_pdu);
 		if(!isgsm) {
 			char **pdu;
 			pdu=cdma_to_gsmpdu(sms_pdu);
@@ -4551,7 +4551,7 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
 /* Called on command or reader thread */
 static void onATReaderClosed()
 {
-	LOGI("AT channel closed\n");
+	ALOGI("AT channel closed\n");
 	at_close();
 	s_closed = 1;
 
@@ -4561,7 +4561,7 @@ static void onATReaderClosed()
 /* Called on command thread */
 static void onATTimeout()
 {
-	LOGI("AT channel timeout; closing\n");
+	ALOGI("AT channel timeout; closing\n");
 	at_close();
 
 	s_closed = 1;
@@ -4623,7 +4623,7 @@ mainLoop(void *param)
 		ret = at_open(fd, onUnsolicited);
 
 		if (ret < 0) {
-			LOGE ("AT error %d on at_open\n", ret);
+			ALOGE ("AT error %d on at_open\n", ret);
 			return 0;
 		}
 
@@ -4634,7 +4634,7 @@ mainLoop(void *param)
 		sleep(5);
 
 		waitForClose();
-		LOGI("Re-opening after close");
+		ALOGI("Re-opening after close");
 	}
 }
 
@@ -4664,19 +4664,19 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
 					usage(argv[0]);
 					return NULL;
 				}
-				LOGI("Opening loopback port %d\n", s_port);
+				ALOGI("Opening loopback port %d\n", s_port);
 				break;
 
 			case 'd':
 				//s_device_path = "/dev/ttyUSB2";
 				s_device_path = optarg;
-				LOGI("Opening tty device %s\n", s_device_path);
+				ALOGI("Opening tty device %s\n", s_device_path);
 				break;
 
 			case 's':
 				s_device_path = optarg;
 				s_device_socket = 1;
-				LOGI("Opening socket %s\n", s_device_path);
+				ALOGI("Opening socket %s\n", s_device_path);
 				break;
 
 			default:
@@ -4710,19 +4710,19 @@ int main (int argc, char **argv)
 				if (s_port == 0) {
 					usage(argv[0]);
 				}
-				LOGI("Opening loopback port %d\n", s_port);
+				ALOGI("Opening loopback port %d\n", s_port);
 				break;
 
 			case 'd':
 				//s_device_path = "/dev/ttyUSB2";
 				s_device_path   = optarg;
-				LOGI("Opening tty device %s\n", s_device_path);
+				ALOGI("Opening tty device %s\n", s_device_path);
 				break;
 
 			case 's':
 				s_device_path   = optarg;
 				s_device_socket = 1;
-				LOGI("Opening socket %s\n", s_device_path);
+				ALOGI("Opening socket %s\n", s_device_path);
 				break;
 
 			default:
