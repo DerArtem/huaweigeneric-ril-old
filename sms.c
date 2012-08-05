@@ -10,6 +10,14 @@
 #ifndef nodroid
 #define LOG_TAG "SMS_RIL"
 #include <utils/Log.h>
+
+/* backwards compatibility for pre-JB */
+#ifndef ALOGD
+#define ALOGD LOGD
+#define ALOGE LOGE
+#define ALOGI LOGI
+#endif
+
 #else
 #define ALOGD printf
 #define ALOGE printf

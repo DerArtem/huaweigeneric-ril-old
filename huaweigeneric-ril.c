@@ -40,6 +40,13 @@
 #define LOG_TAG "RIL"
 #include <utils/Log.h>
 
+/* backwards compatibility for pre-JB */
+#ifndef ALOGD
+#define ALOGD LOGD
+#define ALOGE LOGE
+#define ALOGI LOGI
+#endif
+
 #define MAX_AT_RESPONSE 0x1000
 
 /* pathname returned from RIL_REQUEST_SETUP_DATA_CALL / RIL_REQUEST_SETUP_DEFAULT_PDP */

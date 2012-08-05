@@ -33,6 +33,13 @@
 #define LOG_TAG "AT"
 #include <utils/Log.h>
 
+/* backwards compatibility for pre-JB */
+#ifndef ALOGD
+#define ALOGD LOGD
+#define ALOGE LOGE
+#define ALOGI LOGI
+#endif
+
 #ifdef HAVE_ANDROID_OS
 /* for IOCTL's */
 #include <linux/omap_csmi.h>
