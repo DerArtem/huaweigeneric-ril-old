@@ -2218,15 +2218,17 @@ static void  requestEnterSimPin(void*  data, size_t  datalen, RIL_Token  t)
 	char*         cmd = NULL;
 	const char**  strings = (const char**)data;;
 
-	if(isgsm) {
-		if ( datalen == sizeof(char*) ) {
+	if (isgsm) {
+                int cnt = datalen / sizeof(char*);
+
+		if (cnt == 1 || (cnt == 2 && strings[1] == NULL)) {
 			asprintf(&cmd, "AT+CPIN=\"%s\"", strings[0]);
-		} else if ( datalen == 2*sizeof(char*) ) {
+		} else if (cnt == 2) {
 			asprintf(&cmd, "AT+CPIN=\"%s\",\"%s\"", strings[0], strings[1]);
 		} else
 			goto error;
 
-		err = at_send_command_singleline(cmd, "+CREG:", &p_response);
+		err = at_send_command(cmd, &p_response);
 		free(cmd);
 
 		if (err < 0 || p_response->success == 0) {
