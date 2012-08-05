@@ -1676,8 +1676,8 @@ static void requestRegistrationState(int request, void *data,
 		killConn("1");
 	}
 	asprintf(&responseStr[0], "%d", response[0]);
-	asprintf(&responseStr[1], "%x", response[1]);
-	asprintf(&responseStr[2], "%x", response[2]);
+	asprintf(&responseStr[1], "%u", response[1]);
+	asprintf(&responseStr[2], "%u", response[2]);
 	asprintf(&responseStr[3], "%d", response[3]);
 
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, responseStr, count*sizeof(char*));
