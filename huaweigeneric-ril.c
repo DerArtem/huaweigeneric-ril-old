@@ -3997,7 +3997,7 @@ static void onCancel (RIL_Token t)
 
 static const char * getVersion(void)
 {
-	return "HTC Vogue Community RIL 1.6.0";
+	return "Huawei Generic RIL 1.6.0";
 }
 
 static void
