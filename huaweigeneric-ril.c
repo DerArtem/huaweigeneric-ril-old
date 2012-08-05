@@ -141,6 +141,53 @@ static char erisystem[50];
 static char *callwaiting_num;
 static int countValidCalls=0;
 
+static int wait_for_property(const char *name, const char *desired_value, int maxwait)
+{
+    char value[PROPERTY_VALUE_MAX] = {'\0'};
+    int maxnaps = maxwait / 1;
+
+    if (maxnaps < 1) {
+        maxnaps = 1;
+    }
+
+    while (maxnaps-- > 0) {
+        usleep(1000000);
+        if (property_get(name, value, NULL)) {
+            if (desired_value == NULL ||
+                    strcmp(value, desired_value) == 0) {
+                return 0;
+            }
+        }
+    }
+    return -ETIMEDOUT; /* failure */
+}
+
+
+
+#define PPPD_SERVICE	"pppd_gprs"
+
+static int pppd_start(const char *user, const char *pass)
+{
+	char *cmd = NULL;
+	asprintf(&cmd, PPPD_SERVICE ":%s %s", user ? "name" : "", pass ? pass : "");
+	property_set("ctl.start", cmd);
+	free(cmd);
+	return wait_for_property("init.svc." PPPD_SERVICE, "running", 10);
+}
+
+static int is_pppd_running(void)
+{
+	char value[PROPERTY_VALUE_MAX] = {'\0'};
+	property_get("init.svc." PPPD_SERVICE, value, NULL);
+	return strcmp(value, "running") == 0;
+}
+
+static int pppd_stop(void)
+{
+	property_set("ctl.stop", PPPD_SERVICE);
+	return wait_for_property("init.svc." PPPD_SERVICE, "stopped", 10);
+}
+
 static void handle_cdma_ccwa (const char *s)
 {
 	int err;
@@ -622,12 +669,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
 	}
 
     // make sure pppd is still running, invalidate datacall if it isn't
-	if ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) > 0)
-    {
-		close(fd);
-    }
-	else
-	{
+	if (!is_pppd_running()) {
 		responses[0].active = 0;
 	}
 
@@ -1855,27 +1897,6 @@ error:
 	at_response_free(p2_response);
 }
 
-static int wait_for_property(const char *name, const char *desired_value, int maxwait)
-{
-    char value[PROPERTY_VALUE_MAX] = {'\0'};
-    int maxnaps = maxwait / 1;
-
-    if (maxnaps < 1) {
-        maxnaps = 1;
-    }
-
-    while (maxnaps-- > 0) {
-        usleep(1000000);
-        if (property_get(name, value, NULL)) {
-            if (desired_value == NULL ||
-                    strcmp(value, desired_value) == 0) {
-                return 0;
-            }
-        }
-    }
-    return -1; /* failure */
-}
-
 static char userPassStatic[512] = "preload";
 
 static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
@@ -1884,7 +1905,6 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 	char *user = NULL;
 	char *pass = NULL;
 	char *cmd;
-	char userpass[512];
 	int err;
 	ATResponse *p_response = NULL;
 	int fd, pppstatus,i;
@@ -1905,20 +1925,7 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 
 	apn = ((const char **)data)[2];
 	user = ((char **)data)[3];
-	if(user != NULL)
-	{
-		if (strlen(user)<2)
-			user = "dummy";
-	} else
-		user = "dummy";
-
 	pass = ((char **)data)[4];
-	if(pass != NULL)
-	{
-		if (strlen(pass)<2)
-			pass = "dummy";
-	} else
-		pass = "dummy";
 
 	ALOGD("requesting data connection to APN '%s'\n", apn);
 
@@ -1963,67 +1970,25 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
 		sleep(2); //Wait for the modem to finish
 	}
 
-	//set up the pap/chap secrets file
-	sprintf(userpass, "%s * %s", user, pass);
-	ALOGI("Using username: %s\n", userpass);
-	/*	
-	if (0)
-	//if (0 != strcmp(userpass, userPassStatic))
-	{
-		strcpy (userPassStatic, userpass);
-		len = strlen(userpass);
-		fd = open("/etc/ppp/pap-secrets",O_WRONLY);
-		if(fd < 0)
-			goto error;
-		write(fd, userpass, len);
-		close(fd);
-		fd = open("/etc/ppp/chap-secrets",O_WRONLY);
-		if(fd < 0)
-			goto error;
-		write(fd, userpass, len);
-		close(fd);
-
-		pppconfig = fopen("/etc/ppp/options.huawei","r");
-		if(!pppconfig)
-			goto error;
-
-		//filesize
-		fseek(pppconfig, 0, SEEK_END);
-		buffSize = ftell(pppconfig);
-		rewind(pppconfig);
-
-		//allocate memory
-		buffer = (char *) malloc (sizeof(char)*buffSize);
-		if (buffer == NULL)
-			goto error;
-
-		//read in the original file
-		len = fread (buffer,1,buffSize,pppconfig);
-		if (len != buffSize)
-			goto error;
-		fclose(pppconfig);
-
-		pppconfig = fopen("/system/etc/ppp/options.ttyUSB4","w");
-		fwrite(buffer,1,buffSize,pppconfig);
-		fprintf(pppconfig,"name %s\n",user);
-		fclose(pppconfig);
-		free(buffer);
-	}*/
-
-	system("/system/bin/pppd /dev/ttyUSB0 115200 nocrtscts usepeerdns debug ipcp-accept-local ipcp-accept-remote defaultroute");
-
-	if (wait_for_property("net.ppp0.local-ip", NULL, 10) < 0) {
-		ALOGE("Timeout waiting net.ppp0.local-ip - giving up!\n");
+	if (pppd_start(user, pass) < 0) {
+		ALOGE("Error starting pppd - giving up!");
 		goto error;
 	}
 
-	property_get("net.ppp0.local-ip", ppp_local_ip, NULL);
-	property_get("net.ppp0.dns1", ppp_dns1, NULL);
-	property_get("net.ppp0.dns2", ppp_dns2, NULL);
-	property_get("net.ppp0.gw", ppp_gw, NULL);
+	//system("/system/bin/pppd /dev/ttyUSB0 115200 nocrtscts usepeerdns debug ipcp-accept-local ipcp-accept-remote defaultroute");
+
+	if (wait_for_property("net." PPP_TTY_PATH ".local-ip", NULL, 10) < 0) {
+		ALOGE("Timeout waiting net." PPP_TTY_PATH ".local-ip - giving up!\n");
+		goto error;
+	}
+
+	property_get("net." PPP_TTY_PATH ".local-ip", ppp_local_ip, NULL);
+	property_get("net." PPP_TTY_PATH ".dns1", ppp_dns1, NULL);
+	property_get("net." PPP_TTY_PATH ".dns2", ppp_dns2, NULL);
+	property_get("net." PPP_TTY_PATH ".gw", ppp_gw, NULL);
 	sprintf(ppp_dnses, "%s %s", ppp_dns1, ppp_dns2);
 
-	ALOGI("Got net.ppp0.local-ip: %s\n", ppp_local_ip);
+	ALOGI("Got net." PPP_TTY_PATH ".local-ip: %s\n", ppp_local_ip);
 
 	responses = alloca(n * sizeof(RIL_Data_Call_Response_v6));
 	responses[0].status = 0;
@@ -2057,17 +2022,7 @@ static int killConn(char * cid)
 
 	ALOGD("killConn");
 
-	while ((fd = open("/sys/class/net/ppp0/ifindex",O_RDONLY)) > 0)
-	{
-		if(i%5 == 0)
-			system("killall pppd");
-		if(i>25)
-			goto error;
-		i++;
-			close(fd);
-		sleep(2);
-	}
-	ALOGD("killall pppd finished");
+	pppd_stop();
 
     if (isgsm) {
         asprintf(&cmd, "AT+CGACT=0,%s", cid);
