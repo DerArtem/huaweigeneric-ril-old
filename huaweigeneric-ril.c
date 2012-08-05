@@ -1484,8 +1484,8 @@ static void requestRegistrationState(int request, void *data,
 	char status[1];
 
 	response[0]=1;
-	response[1]=-1;
-	response[2]=-1;
+	response[1]=0;
+	response[2]=0;
 	response[3]=1;
 
 	if(isgsm) {
@@ -1554,8 +1554,6 @@ static void requestRegistrationState(int request, void *data,
 			case 0: /* +CREG: <stat> */
 				err = at_tok_nextint(&line, &response[0]);
 				if (err < 0) goto error;
-				response[1] = -1;
-				response[2] = -1;
 				break;
 
 			case 1: /* +CREG: <n>, <stat> */
@@ -1563,8 +1561,6 @@ static void requestRegistrationState(int request, void *data,
 				if (err < 0) goto error;
 				err = at_tok_nextint(&line, &response[0]);
 				if (err < 0) goto error;
-				response[1] = -1;
-				response[2] = -1;
 				if (err < 0) goto error;
 				break;
 
