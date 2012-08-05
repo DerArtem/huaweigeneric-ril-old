@@ -2241,6 +2241,11 @@ error:
 		} else {
 			RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 
+			/* Make sure we get notifications for network registeration
+			   of both voice and data now */
+			at_send_command("AT+CREG=2", NULL);
+			at_send_command("AT+CGREG=2", NULL);
+
 			/* Notify that SIM is ready */
 			setRadioState(RADIO_STATE_SIM_READY);
 		}
