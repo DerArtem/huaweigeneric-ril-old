@@ -33,6 +33,13 @@
 #define LOG_TAG "AT"
 #include <utils/Log.h>
 
+/* backwards compatibility for pre-JB */
+#ifndef ALOGD
+#define ALOGD LOGD
+#define ALOGE LOGE
+#define ALOGI LOGI
+#endif
+
 #ifdef HAVE_ANDROID_OS
 /* for IOCTL's */
 #include <linux/omap_csmi.h>
@@ -69,7 +76,7 @@ void  AT_DUMP(const char*  prefix, const char*  buff, int  len)
 {
     if (len < 0)
         len = strlen(buff);
-    LOGD("%.*s", len, buff);
+    ALOGD("%.*s", len, buff);
 }
 #endif
 
@@ -290,7 +297,7 @@ static void processLine(const char *line)
         break;
 
         default: /* this should never be reached */
-            LOGE("Unsupported AT command type %d\n", s_type);
+            ALOGE("Unsupported AT command type %d\n", s_type);
             handleUnsolicited(line);
         break;
     }
@@ -371,7 +378,7 @@ static const char *readline()
 
     while (p_eol == NULL) {
         if (0 == MAX_AT_RESPONSE - (p_read - s_ATBuffer)) {
-            LOGE("ERROR: Input line exceeded buffer\n");
+            ALOGE("ERROR: Input line exceeded buffer\n");
             /* ditch buffer and start over again */
             s_ATBufferCur = s_ATBuffer;
             *s_ATBufferCur = '\0';
@@ -398,9 +405,9 @@ static const char *readline()
         } else if (count <= 0) {
             /* read error encountered or EOF reached */
             if(count == 0) {
-                LOGD("atchannel: EOF reached");
+                ALOGD("atchannel: EOF reached");
             } else {
-                LOGD("atchannel: read error %s", strerror(errno));
+                ALOGD("atchannel: read error %s", strerror(errno));
             }
             return NULL;
         }
@@ -413,7 +420,7 @@ static const char *readline()
     s_ATBufferCur = p_eol + 1; /* this will always be <= p_read,    */
                               /* and there will be a \0 at *p_read */
 
-    LOGD("AT< %s\n", ret);
+    ALOGD("AT< %s\n", ret);
     return ret;
 }
 
@@ -499,7 +506,7 @@ static int writeline (const char *s)
         return AT_ERROR_CHANNEL_CLOSED;
     }
 
-    LOGD("AT> %s\n", s);
+    ALOGD("AT> %s\n", s);
 
     AT_DUMP( ">> ", s, strlen(s) );
 
@@ -538,7 +545,7 @@ static int writeCtrlZ (const char *s)
         return AT_ERROR_CHANNEL_CLOSED;
     }
 
-    LOGD("AT> %s^Z\n", s);
+    ALOGD("AT> %s^Z\n", s);
 
     AT_DUMP( ">* ", s, strlen(s) );
 
